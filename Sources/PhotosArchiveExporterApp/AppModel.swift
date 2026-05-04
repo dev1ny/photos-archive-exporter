@@ -128,6 +128,7 @@ final class AppModel: ObservableObject {
 
         phase = .exporting
         lastError = nil
+        records = []
         statusMessage = "Exporting \(resources.count) resources..."
 
         let startedAt = Date()
@@ -136,13 +137,17 @@ final class AppModel: ObservableObject {
         let indexStore = ArchiveIndexStore(destinationRoot: destinationRoot)
 
         do {
+            let previousRecords = try indexStore.loadIndex()
             let newRecords = await runner.export(
                 resources: resources,
                 destinationRoot: destinationRoot,
                 runID: runID,
-                exportRunDate: startedAt
+                exportRunDate: startedAt,
+                existingRecords: previousRecords
             )
-            let combinedRecords = try indexStore.loadIndex() + newRecords
+            records = newRecords
+
+            let combinedRecords = previousRecords + newRecords
             try indexStore.saveIndex(combinedRecords)
             _ = try indexStore.writeResourcesCSV(runID: runID, records: newRecords)
             _ = try indexStore.writeErrorsCSV(runID: runID, records: newRecords)
@@ -151,7 +156,6 @@ final class AppModel: ObservableObject {
                 groups: DuplicateReporter.strongDuplicateGroups(from: combinedRecords)
             )
 
-            records = newRecords
             phase = .finished
             statusMessage = "Export finished for run \(runID)."
         } catch {

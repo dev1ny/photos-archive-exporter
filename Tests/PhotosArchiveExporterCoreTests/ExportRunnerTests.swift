@@ -55,8 +55,20 @@ final class ExportRunnerTests: XCTestCase {
             assetCreationDate: Date(timeIntervalSince1970: 0)
         )
         let runner = ExportRunner(resourceWriter: FakeResourceWriter(data: Data("hello".utf8)), pathPlanner: planner)
+        let existingRecord = ExportRecord.runnerSample(
+            assetLocalIdentifier: "asset-1",
+            resourceIdentifier: "resource-1",
+            destinationPath: preferred.path,
+            sha256: "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        )
 
-        let records = await runner.export(resources: [resource], destinationRoot: directory, runID: "run-1", exportRunDate: Date(timeIntervalSince1970: 10))
+        let records = await runner.export(
+            resources: [resource],
+            destinationRoot: directory,
+            runID: "run-1",
+            exportRunDate: Date(timeIntervalSince1970: 10),
+            existingRecords: [existingRecord]
+        )
 
         XCTAssertEqual(records[0].status, .skippedExisting)
         XCTAssertEqual(records[0].destinationPath, preferred.path)
@@ -85,12 +97,63 @@ final class ExportRunnerTests: XCTestCase {
             assetCreationDate: Date(timeIntervalSince1970: 0)
         )
         let runner = ExportRunner(resourceWriter: FakeResourceWriter(data: Data("hello".utf8)), pathPlanner: planner)
+        let existingRecord = ExportRecord.runnerSample(
+            assetLocalIdentifier: "asset-1",
+            resourceIdentifier: "resource-1",
+            destinationPath: conflict.path,
+            sha256: "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        )
 
-        let records = await runner.export(resources: [resource], destinationRoot: directory, runID: "run-1", exportRunDate: Date(timeIntervalSince1970: 10))
+        let records = await runner.export(
+            resources: [resource],
+            destinationRoot: directory,
+            runID: "run-1",
+            exportRunDate: Date(timeIntervalSince1970: 10),
+            existingRecords: [existingRecord]
+        )
 
         XCTAssertEqual(records[0].status, .skippedExisting)
         XCTAssertEqual(records[0].destinationPath, conflict.path)
         XCTAssertFalse(FileManager.default.fileExists(atPath: nextConflict.path))
+    }
+
+    func testExportsSameHashDifferentResourceToConflictPathWhenIndexDoesNotMatchIdentity() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let planner = PathPlanner(calendar: Calendar(identifier: .gregorian), timeZone: TimeZone(secondsFromGMT: 0)!)
+        let preferred = planner.preferredDestination(root: directory, captureDate: Date(timeIntervalSince1970: 0), originalFilename: "IMG_0001.HEIC")
+        let conflict = PathPlanner.resolveConflict(for: preferred) { candidate in
+            candidate == preferred
+        }
+        try FileManager.default.createDirectory(at: preferred.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("hello".utf8).write(to: preferred)
+        let resource = AssetResourceDescriptor(
+            assetLocalIdentifier: "asset-2",
+            resourceIdentifier: "resource-2",
+            resourceType: .photo,
+            mediaType: .image,
+            originalFilename: "IMG_0001.HEIC",
+            uniformTypeIdentifier: "public.heic",
+            assetCreationDate: Date(timeIntervalSince1970: 0)
+        )
+        let runner = ExportRunner(resourceWriter: FakeResourceWriter(data: Data("hello".utf8)), pathPlanner: planner)
+        let differentResourceRecord = ExportRecord.runnerSample(
+            assetLocalIdentifier: "asset-1",
+            resourceIdentifier: "resource-1",
+            destinationPath: preferred.path,
+            sha256: "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        )
+
+        let records = await runner.export(
+            resources: [resource],
+            destinationRoot: directory,
+            runID: "run-1",
+            exportRunDate: Date(timeIntervalSince1970: 10),
+            existingRecords: [differentResourceRecord]
+        )
+
+        XCTAssertEqual(records[0].status, .renamedConflict)
+        XCTAssertEqual(records[0].destinationPath, conflict.path)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: conflict.path))
     }
 }
 
@@ -103,5 +166,32 @@ private struct FakeResourceWriter: ResourceWriting {
             throw CocoaError(.fileWriteUnknown)
         }
         try data.write(to: temporaryURL)
+    }
+}
+
+private extension ExportRecord {
+    static func runnerSample(
+        assetLocalIdentifier: String,
+        resourceIdentifier: String,
+        destinationPath: String,
+        sha256: String?,
+        status: ExportStatus = .exported
+    ) -> ExportRecord {
+        ExportRecord(
+            runID: "prior-run",
+            assetLocalIdentifier: assetLocalIdentifier,
+            resourceIdentifier: resourceIdentifier,
+            resourceType: .photo,
+            mediaType: .image,
+            originalFilename: URL(fileURLWithPath: destinationPath).lastPathComponent,
+            destinationPath: destinationPath,
+            captureDate: Date(timeIntervalSince1970: 0),
+            captureDateSource: .assetCreationDate,
+            fileSize: 5,
+            sha256: sha256,
+            status: status,
+            warnings: [],
+            errorMessage: nil
+        )
     }
 }

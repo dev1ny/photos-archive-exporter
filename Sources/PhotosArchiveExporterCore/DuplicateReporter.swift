@@ -12,17 +12,24 @@ public struct DuplicateGroup: Codable, Equatable {
 
 public enum DuplicateReporter {
     public static func strongDuplicateGroups(from records: [ExportRecord]) -> [DuplicateGroup] {
-        let grouped = Dictionary(grouping: records.compactMap { record -> (String, ExportRecord)? in
-            guard let sha256 = record.sha256, !sha256.isEmpty else {
-                return nil
+        var latestRecordByDestinationPath: [String: ExportRecord] = [:]
+        for record in records {
+            guard record.status != .failed,
+                  let sha256 = record.sha256,
+                  !sha256.isEmpty
+            else {
+                continue
             }
-            return (sha256, record)
-        }, by: { $0.0 })
+            latestRecordByDestinationPath[record.destinationPath] = record
+        }
+
+        let grouped = Dictionary(grouping: latestRecordByDestinationPath.values) { record in
+            record.sha256 ?? ""
+        }
 
         return grouped
             .compactMap { sha256, pairs -> DuplicateGroup? in
-                let records = pairs.map(\.1)
-                return records.count > 1 ? DuplicateGroup(sha256: sha256, records: records) : nil
+                return pairs.count > 1 ? DuplicateGroup(sha256: sha256, records: pairs) : nil
             }
             .sorted { $0.sha256 < $1.sha256 }
     }

@@ -15,17 +15,23 @@ public struct ExportRunner {
         self.fileManager = fileManager
     }
 
-    public func export(resources: [AssetResourceDescriptor], destinationRoot: URL, runID: String, exportRunDate: Date) async -> [ExportRecord] {
+    public func export(resources: [AssetResourceDescriptor], destinationRoot: URL, runID: String, exportRunDate: Date, existingRecords: [ExportRecord] = []) async -> [ExportRecord] {
         var records: [ExportRecord] = []
 
         for resource in resources {
-            records.append(await export(resource: resource, destinationRoot: destinationRoot, runID: runID, exportRunDate: exportRunDate))
+            records.append(await export(
+                resource: resource,
+                destinationRoot: destinationRoot,
+                runID: runID,
+                exportRunDate: exportRunDate,
+                knownRecords: existingRecords + records
+            ))
         }
 
         return records
     }
 
-    private func export(resource: AssetResourceDescriptor, destinationRoot: URL, runID: String, exportRunDate: Date) async -> ExportRecord {
+    private func export(resource: AssetResourceDescriptor, destinationRoot: URL, runID: String, exportRunDate: Date, knownRecords: [ExportRecord]) async -> ExportRecord {
         let temporaryURL = temporaryDirectory(root: destinationRoot).appendingPathComponent(UUID().uuidString, isDirectory: false)
         var fallbackDecision = fallbackCaptureDateDecision(for: resource, exportRunDate: exportRunDate)
         var fallbackDestination = pathPlanner.preferredDestination(root: destinationRoot, captureDate: fallbackDecision.date, originalFilename: resource.originalFilename)
@@ -47,7 +53,12 @@ public struct ExportRunner {
             let temporaryHash = try FileHasher.sha256Hex(for: temporaryURL)
             let temporarySize = try fileSize(at: temporaryURL)
 
-            let exportDestination = try resolveExportDestination(preferred: fallbackDestination, temporaryHash: temporaryHash)
+            let exportDestination = try resolveExportDestination(
+                preferred: fallbackDestination,
+                temporaryHash: temporaryHash,
+                resource: resource,
+                knownRecords: knownRecords
+            )
             if exportDestination.isExistingMatch {
                 try? fileManager.removeItem(at: temporaryURL)
                 return makeRecord(
@@ -108,7 +119,7 @@ public struct ExportRunner {
         try fileManager.moveItem(at: temporaryURL, to: destination)
     }
 
-    private func resolveExportDestination(preferred: URL, temporaryHash: String) throws -> (url: URL, isExistingMatch: Bool) {
+    private func resolveExportDestination(preferred: URL, temporaryHash: String, resource: AssetResourceDescriptor, knownRecords: [ExportRecord]) throws -> (url: URL, isExistingMatch: Bool) {
         var existingCandidates: Set<String> = []
         var candidate = preferred
 
@@ -119,13 +130,25 @@ public struct ExportRunner {
 
             let existingHash = try FileHasher.sha256Hex(for: candidate)
             if existingHash == temporaryHash {
-                return (candidate, true)
+                if hasKnownMatchingRecord(for: resource, destination: candidate, sha256: temporaryHash, in: knownRecords) {
+                    return (candidate, true)
+                }
             }
 
             existingCandidates.insert(candidate.path)
             candidate = PathPlanner.resolveConflict(for: preferred) { candidate in
                 candidate == preferred || existingCandidates.contains(candidate.path)
             }
+        }
+    }
+
+    private func hasKnownMatchingRecord(for resource: AssetResourceDescriptor, destination: URL, sha256: String, in knownRecords: [ExportRecord]) -> Bool {
+        knownRecords.contains { record in
+            record.assetLocalIdentifier == resource.assetLocalIdentifier
+                && record.resourceIdentifier == resource.resourceIdentifier
+                && record.destinationPath == destination.path
+                && record.sha256 == sha256
+                && record.status != .failed
         }
     }
 

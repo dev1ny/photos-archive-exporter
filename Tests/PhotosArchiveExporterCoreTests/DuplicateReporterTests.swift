@@ -7,7 +7,33 @@ final class DuplicateReporterTests: XCTestCase {
             ExportRecord.duplicateSample(path: "/a.heic", sha256: "same"),
             ExportRecord.duplicateSample(path: "/b.heic", sha256: "same"),
             ExportRecord.duplicateSample(path: "/c.heic", sha256: "unique"),
-            ExportRecord.duplicateSample(path: "/d.heic", sha256: nil)
+            ExportRecord.duplicateSample(path: "/d.heic", sha256: nil),
+            ExportRecord.duplicateSample(path: "/e.heic", sha256: ""),
+            ExportRecord.duplicateSample(path: "/failed.heic", sha256: "same", status: .failed)
+        ]
+
+        let groups = DuplicateReporter.strongDuplicateGroups(from: records)
+
+        XCTAssertEqual(groups.count, 1)
+        XCTAssertEqual(groups[0].sha256, "same")
+        XCTAssertEqual(groups[0].records.map(\.destinationPath).sorted(), ["/a.heic", "/b.heic"])
+    }
+
+    func testSkippedExistingRerunForSameDestinationDoesNotCreateDuplicateGroup() {
+        let records = [
+            ExportRecord.duplicateSample(path: "/a.heic", sha256: "same", status: .exported),
+            ExportRecord.duplicateSample(path: "/a.heic", sha256: "same", status: .skippedExisting)
+        ]
+
+        let groups = DuplicateReporter.strongDuplicateGroups(from: records)
+
+        XCTAssertTrue(groups.isEmpty)
+    }
+
+    func testDifferentDestinationPathsWithSameHashCreateDuplicateGroup() {
+        let records = [
+            ExportRecord.duplicateSample(path: "/a.heic", sha256: "same"),
+            ExportRecord.duplicateSample(path: "/b.heic", sha256: "same")
         ]
 
         let groups = DuplicateReporter.strongDuplicateGroups(from: records)
@@ -19,7 +45,7 @@ final class DuplicateReporterTests: XCTestCase {
 }
 
 private extension ExportRecord {
-    static func duplicateSample(path: String, sha256: String?) -> ExportRecord {
+    static func duplicateSample(path: String, sha256: String?, status: ExportStatus = .exported) -> ExportRecord {
         ExportRecord(
             runID: "run-1",
             assetLocalIdentifier: UUID().uuidString,
@@ -32,7 +58,7 @@ private extension ExportRecord {
             captureDateSource: .assetCreationDate,
             fileSize: 12,
             sha256: sha256,
-            status: .exported,
+            status: status,
             warnings: [],
             errorMessage: nil
         )
