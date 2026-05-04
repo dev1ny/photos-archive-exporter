@@ -1,5 +1,9 @@
 import Foundation
 
+public enum ArchiveIndexStoreError: Error, Equatable {
+    case invalidRunID(String)
+}
+
 public struct ArchiveIndexStore {
     public let destinationRoot: URL
 
@@ -31,16 +35,20 @@ public struct ArchiveIndexStore {
     }
 
     public func writeResourcesCSV(runID: String, records: [ExportRecord]) throws -> URL {
-        try ensureRunDirectory(runID: runID)
-        let url = runDirectory(runID: runID).appendingPathComponent("\(runID)-resources.csv", isDirectory: false)
+        let validRunID = try validateRunID(runID)
+        let directory = runDirectory(validRunID: validRunID)
+        try ensureRunDirectory(at: directory)
+        let url = directory.appendingPathComponent("\(validRunID)-resources.csv", isDirectory: false)
         let rows = [resourceHeader] + records.map(resourceRow)
         try rows.joined(separator: "\n").appending("\n").write(to: url, atomically: true, encoding: .utf8)
         return url
     }
 
     public func writeErrorsCSV(runID: String, records: [ExportRecord]) throws -> URL {
-        try ensureRunDirectory(runID: runID)
-        let url = runDirectory(runID: runID).appendingPathComponent("\(runID)-errors.csv", isDirectory: false)
+        let validRunID = try validateRunID(runID)
+        let directory = runDirectory(validRunID: validRunID)
+        try ensureRunDirectory(at: directory)
+        let url = directory.appendingPathComponent("\(validRunID)-errors.csv", isDirectory: false)
         let failed = records.filter { $0.status == .failed }
         let rows = [resourceHeader] + failed.map(resourceRow)
         try rows.joined(separator: "\n").appending("\n").write(to: url, atomically: true, encoding: .utf8)
@@ -48,8 +56,10 @@ public struct ArchiveIndexStore {
     }
 
     public func writeDuplicatesCSV(runID: String, groups: [DuplicateGroup]) throws -> URL {
-        try ensureRunDirectory(runID: runID)
-        let url = runDirectory(runID: runID).appendingPathComponent("\(runID)-duplicates.csv", isDirectory: false)
+        let validRunID = try validateRunID(runID)
+        let directory = runDirectory(validRunID: validRunID)
+        try ensureRunDirectory(at: directory)
+        let url = directory.appendingPathComponent("\(validRunID)-duplicates.csv", isDirectory: false)
         let header = csvRow(["sha256", "destinationPath", "originalFilename", "assetLocalIdentifier", "resourceIdentifier"])
         let rows = groups.flatMap { group in
             group.records.map { record in
@@ -77,14 +87,28 @@ public struct ArchiveIndexStore {
         try FileManager.default.createDirectory(at: supportDirectory, withIntermediateDirectories: true)
     }
 
-    private func ensureRunDirectory(runID: String) throws {
-        try FileManager.default.createDirectory(at: runDirectory(runID: runID), withIntermediateDirectories: true)
+    private func ensureRunDirectory(at directory: URL) throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     }
 
-    private func runDirectory(runID: String) -> URL {
+    private func runDirectory(validRunID: String) -> URL {
         supportDirectory
             .appendingPathComponent("export-runs", isDirectory: true)
-            .appendingPathComponent(runID, isDirectory: true)
+            .appendingPathComponent(validRunID, isDirectory: true)
+    }
+
+    private func validateRunID(_ runID: String) throws -> String {
+        guard !runID.isEmpty,
+              runID != ".",
+              runID != "..",
+              !runID.contains("/"),
+              !runID.contains("\\"),
+              !runID.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) })
+        else {
+            throw ArchiveIndexStoreError.invalidRunID(runID)
+        }
+
+        return runID
     }
 
     private var resourceHeader: String {
@@ -131,11 +155,22 @@ public struct ArchiveIndexStore {
 
     private func csvRow(_ values: [String]) -> String {
         values.map { value in
-            let escaped = value.replacingOccurrences(of: "\"", with: "\"\"")
-            if escaped.contains(",") || escaped.contains("\"") || escaped.contains("\n") {
+            let neutralized = neutralizeSpreadsheetFormula(value)
+            let escaped = neutralized.replacingOccurrences(of: "\"", with: "\"\"")
+            if escaped.contains(",") || escaped.contains("\"") || escaped.contains("\n") || escaped.contains("\r") {
                 return "\"\(escaped)\""
             }
             return escaped
         }.joined(separator: ",")
+    }
+
+    private func neutralizeSpreadsheetFormula(_ value: String) -> String {
+        guard let first = value.first,
+              first == "=" || first == "+" || first == "-" || first == "@" || first == "\t" || first == "\r"
+        else {
+            return value
+        }
+
+        return "'\(value)"
     }
 }
