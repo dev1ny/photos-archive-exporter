@@ -4,18 +4,28 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="Photos Archive Exporter"
 BINARY_NAME="PhotosArchiveExporterApp"
+VERSION="0.1.0"
 DIST_DIR="$ROOT_DIR/dist"
 APP_DIR="$DIST_DIR/$APP_NAME.app"
+ZIP_PATH="$DIST_DIR/PhotosArchiveExporter-v$VERSION-macos-universal.zip"
 CONTENTS_DIR="$APP_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
+ARM64_BUILD_DIR="$ROOT_DIR/.build/universal-arm64"
+X86_64_BUILD_DIR="$ROOT_DIR/.build/universal-x86_64"
+ARM64_TRIPLE="arm64-apple-macosx13.0"
+X86_64_TRIPLE="x86_64-apple-macosx13.0"
 
 cd "$ROOT_DIR"
-swift build -c release
+swift build -c release --product "$BINARY_NAME" --triple "$ARM64_TRIPLE" --scratch-path "$ARM64_BUILD_DIR"
+swift build -c release --product "$BINARY_NAME" --triple "$X86_64_TRIPLE" --scratch-path "$X86_64_BUILD_DIR"
+
+ARM64_BINARY="$(swift build -c release --product "$BINARY_NAME" --triple "$ARM64_TRIPLE" --scratch-path "$ARM64_BUILD_DIR" --show-bin-path)/$BINARY_NAME"
+X86_64_BINARY="$(swift build -c release --product "$BINARY_NAME" --triple "$X86_64_TRIPLE" --scratch-path "$X86_64_BUILD_DIR" --show-bin-path)/$BINARY_NAME"
 
 rm -rf "$APP_DIR"
 mkdir -p "$MACOS_DIR"
 
-cp ".build/release/$BINARY_NAME" "$MACOS_DIR/$BINARY_NAME"
+lipo -create "$ARM64_BINARY" "$X86_64_BINARY" -output "$MACOS_DIR/$BINARY_NAME"
 
 cat > "$CONTENTS_DIR/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -47,4 +57,7 @@ cat > "$CONTENTS_DIR/Info.plist" <<'PLIST'
 PLIST
 
 codesign --force --deep --sign - "$APP_DIR"
+rm -f "$ZIP_PATH"
+ditto -c -k --norsrc --noextattr --noqtn --noacl --keepParent "$APP_DIR" "$ZIP_PATH"
 echo "$APP_DIR"
+echo "$ZIP_PATH"
