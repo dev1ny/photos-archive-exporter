@@ -61,6 +61,37 @@ final class ExportRunnerTests: XCTestCase {
         XCTAssertEqual(records[0].status, .skippedExisting)
         XCTAssertEqual(records[0].destinationPath, preferred.path)
     }
+
+    func testSkipsExistingConflictFileWhenHashMatchesOnRerun() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let planner = PathPlanner(calendar: Calendar(identifier: .gregorian), timeZone: TimeZone(secondsFromGMT: 0)!)
+        let preferred = planner.preferredDestination(root: directory, captureDate: Date(timeIntervalSince1970: 0), originalFilename: "IMG_0001.HEIC")
+        let conflict = PathPlanner.resolveConflict(for: preferred) { candidate in
+            candidate == preferred
+        }
+        let nextConflict = PathPlanner.resolveConflict(for: preferred) { candidate in
+            candidate == preferred || candidate == conflict
+        }
+        try FileManager.default.createDirectory(at: preferred.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("different".utf8).write(to: preferred)
+        try Data("hello".utf8).write(to: conflict)
+        let resource = AssetResourceDescriptor(
+            assetLocalIdentifier: "asset-1",
+            resourceIdentifier: "resource-1",
+            resourceType: .photo,
+            mediaType: .image,
+            originalFilename: "IMG_0001.HEIC",
+            uniformTypeIdentifier: "public.heic",
+            assetCreationDate: Date(timeIntervalSince1970: 0)
+        )
+        let runner = ExportRunner(resourceWriter: FakeResourceWriter(data: Data("hello".utf8)), pathPlanner: planner)
+
+        let records = await runner.export(resources: [resource], destinationRoot: directory, runID: "run-1", exportRunDate: Date(timeIntervalSince1970: 10))
+
+        XCTAssertEqual(records[0].status, .skippedExisting)
+        XCTAssertEqual(records[0].destinationPath, conflict.path)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: nextConflict.path))
+    }
 }
 
 private struct FakeResourceWriter: ResourceWriting {

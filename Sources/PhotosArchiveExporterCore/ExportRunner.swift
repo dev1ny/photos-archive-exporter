@@ -47,47 +47,30 @@ public struct ExportRunner {
             let temporaryHash = try FileHasher.sha256Hex(for: temporaryURL)
             let temporarySize = try fileSize(at: temporaryURL)
 
-            if fileManager.fileExists(atPath: fallbackDestination.path) {
-                let existingHash = try FileHasher.sha256Hex(for: fallbackDestination)
-                if existingHash == temporaryHash {
-                    try? fileManager.removeItem(at: temporaryURL)
-                    return makeRecord(
-                        resource: resource,
-                        runID: runID,
-                        destination: fallbackDestination,
-                        captureDateDecision: captureDateDecision,
-                        fileSize: temporarySize,
-                        sha256: temporaryHash,
-                        status: .skippedExisting,
-                        errorMessage: nil
-                    )
-                }
-
-                let conflictDestination = PathPlanner.resolveConflict(for: fallbackDestination) { candidate in
-                    fileManager.fileExists(atPath: candidate.path)
-                }
-                try moveTemporaryFile(from: temporaryURL, to: conflictDestination)
+            let exportDestination = try resolveExportDestination(preferred: fallbackDestination, temporaryHash: temporaryHash)
+            if exportDestination.isExistingMatch {
+                try? fileManager.removeItem(at: temporaryURL)
                 return makeRecord(
                     resource: resource,
                     runID: runID,
-                    destination: conflictDestination,
+                    destination: exportDestination.url,
                     captureDateDecision: captureDateDecision,
                     fileSize: temporarySize,
                     sha256: temporaryHash,
-                    status: .renamedConflict,
+                    status: .skippedExisting,
                     errorMessage: nil
                 )
             }
 
-            try moveTemporaryFile(from: temporaryURL, to: fallbackDestination)
+            try moveTemporaryFile(from: temporaryURL, to: exportDestination.url)
             return makeRecord(
                 resource: resource,
                 runID: runID,
-                destination: fallbackDestination,
+                destination: exportDestination.url,
                 captureDateDecision: captureDateDecision,
                 fileSize: temporarySize,
                 sha256: temporaryHash,
-                status: .exported,
+                status: exportDestination.url == fallbackDestination ? .exported : .renamedConflict,
                 errorMessage: nil
             )
         } catch {
@@ -123,6 +106,27 @@ public struct ExportRunner {
     private func moveTemporaryFile(from temporaryURL: URL, to destination: URL) throws {
         try fileManager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
         try fileManager.moveItem(at: temporaryURL, to: destination)
+    }
+
+    private func resolveExportDestination(preferred: URL, temporaryHash: String) throws -> (url: URL, isExistingMatch: Bool) {
+        var existingCandidates: Set<String> = []
+        var candidate = preferred
+
+        while true {
+            guard fileManager.fileExists(atPath: candidate.path) else {
+                return (candidate, false)
+            }
+
+            let existingHash = try FileHasher.sha256Hex(for: candidate)
+            if existingHash == temporaryHash {
+                return (candidate, true)
+            }
+
+            existingCandidates.insert(candidate.path)
+            candidate = PathPlanner.resolveConflict(for: preferred) { candidate in
+                candidate == preferred || existingCandidates.contains(candidate.path)
+            }
+        }
     }
 
     private func fileSize(at url: URL) throws -> Int64 {
