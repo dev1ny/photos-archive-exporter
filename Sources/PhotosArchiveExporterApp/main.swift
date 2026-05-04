@@ -1,1 +1,0 @@
-print("Photos Archive Exporter")
