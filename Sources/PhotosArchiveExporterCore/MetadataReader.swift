@@ -26,13 +26,8 @@ public enum MetadataReader {
             return nil
         }
 
-        let exif = properties[kCGImagePropertyExifDictionary] as? [CFString: Any]
-        let tiff = properties[kCGImagePropertyTIFFDictionary] as? [CFString: Any]
-        let rawDate = exif?[kCGImagePropertyExifDateTimeOriginal] as? String
-            ?? exif?[kCGImagePropertyExifDateTimeDigitized] as? String
-            ?? tiff?[kCGImagePropertyTIFFDateTime] as? String
-
-        guard let rawDate else {
+        guard let exif = properties[kCGImagePropertyExifDictionary] as? [CFString: Any],
+              let rawDate = exif[kCGImagePropertyExifDateTimeOriginal] as? String else {
             return nil
         }
 
