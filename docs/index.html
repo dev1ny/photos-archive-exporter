@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Photos Archive Exporter</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.6;
+    }
+
+    body {
+      margin: 0;
+      background: Canvas;
+      color: CanvasText;
+    }
+
+    main {
+      max-width: 880px;
+      margin: 0 auto;
+      padding: 56px 24px 72px;
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: 40px;
+      line-height: 1.15;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin-top: 42px;
+      font-size: 24px;
+    }
+
+    p,
+    li {
+      font-size: 17px;
+    }
+
+    a {
+      color: LinkText;
+    }
+
+    .lead {
+      font-size: 20px;
+      color: GrayText;
+      max-width: 760px;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin: 28px 0 8px;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      min-height: 42px;
+      padding: 0 16px;
+      border: 1px solid ButtonBorder;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 600;
+      background: ButtonFace;
+      color: ButtonText;
+    }
+
+    pre {
+      overflow-x: auto;
+      padding: 16px;
+      border-radius: 8px;
+      background: color-mix(in srgb, CanvasText 8%, Canvas);
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.95em;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Photos Archive Exporter</h1>
+    <p class="lead">一个原生 macOS 工具，用于从 Apple「照片」当前图库中导出原始照片和视频资源，并整理成按日期归档的普通文件夹。</p>
+
+    <div class="actions">
+      <a class="button" href="https://github.com/dev1ny/photos-archive-exporter/releases/latest">下载最新版</a>
+      <a class="button" href="https://github.com/dev1ny/photos-archive-exporter">查看 GitHub 仓库</a>
+    </div>
+
+    <h2>下载文件</h2>
+    <p>在 Release 页面下载：</p>
+    <pre><code>PhotosArchiveExporter-v0.1.0-macos-universal.zip</code></pre>
+    <p>这个包是 macOS 通用版，同时支持 Apple silicon <code>arm64</code> 和 Intel <code>x86_64</code>。</p>
+
+    <h2>快速使用</h2>
+    <ol>
+      <li>在 Apple「照片」中打开你要导出的图库。</li>
+      <li>启动 <code>Photos Archive Exporter.app</code>。</li>
+      <li>授权 Photos 访问权限。</li>
+      <li>选择导出目标文件夹。</li>
+      <li>点击 <strong>Scan Library</strong>。</li>
+      <li>点击 <strong>Start Full Export</strong>。</li>
+    </ol>
+
+    <h2>归档结构</h2>
+    <pre><code>Destination/
+  2024/
+    2024-08/
+      2024-08-16/
+        2024-08-16_14-22-10_IMG_1234.HEIC
+  _photos_archive_exporter/
+    archive-index.json
+    export-runs/</code></pre>
+
+    <h2>安全原则</h2>
+    <ul>
+      <li>只读访问 Photos 图库。</li>
+      <li>不删除、不编辑、不移动 Photos 中的资产。</li>
+      <li>不解析 <code>.photoslibrary</code> 内部私有数据库。</li>
+      <li>不自动删除重复文件。</li>
+      <li>重复内容会被保留，并在报告中标记。</li>
+    </ul>
+
+    <h2>当前限制</h2>
+    <ul>
+      <li>需要先在 Apple「照片」中切换到目标图库。</li>
+      <li>需要原片已经保存在本机。</li>
+      <li>暂不处理 iCloud 原片自动下载。</li>
+      <li>暂不导出编辑后版本。</li>
+      <li>当前版本尚未做 Developer ID 公证。</li>
+    </ul>
+  </main>
+</body>
+</html>
+
