@@ -14,6 +14,7 @@
 
 - Create `Package.swift`: SwiftPM package definition for the core library, app executable, and tests.
 - Create `Sources/PhotosArchiveExporterCore/ExportTypes.swift`: shared domain types for assets, resources, export records, statuses, and summaries.
+- Create `Sources/PhotosArchiveExporterApp/main.swift`: temporary executable entry point until the SwiftUI app replaces it.
 - Create `Sources/PhotosArchiveExporterCore/FilenameSanitizer.swift`: filesystem-safe filename cleanup.
 - Create `Sources/PhotosArchiveExporterCore/CaptureDateResolver.swift`: date priority logic.
 - Create `Sources/PhotosArchiveExporterCore/PathPlanner.swift`: year/month/day destination path generation and conflict suffix generation.
@@ -34,6 +35,7 @@
 **Files:**
 - Create: `Package.swift`
 - Create: `Sources/PhotosArchiveExporterCore/ExportTypes.swift`
+- Create: `Sources/PhotosArchiveExporterApp/main.swift`
 - Create: `Tests/PhotosArchiveExporterCoreTests/ExportTypesTests.swift`
 
 - [ ] **Step 1: Create the Swift package definition**
@@ -279,7 +281,15 @@ public struct RunSummary: Codable, Equatable {
 }
 ```
 
-- [ ] **Step 5: Run the model test to verify it passes**
+- [ ] **Step 5: Add a temporary executable entry point**
+
+Create `Sources/PhotosArchiveExporterApp/main.swift` so SwiftPM can build the executable target before the SwiftUI app is added in Task 7:
+
+```swift
+print("Photos Archive Exporter")
+```
+
+- [ ] **Step 6: Run the model test to verify it passes**
 
 Run:
 
@@ -289,12 +299,12 @@ swift test --filter ExportTypesTests
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit Task 1**
+- [ ] **Step 7: Commit Task 1**
 
 Run:
 
 ```bash
-git add Package.swift Sources/PhotosArchiveExporterCore/ExportTypes.swift Tests/PhotosArchiveExporterCoreTests/ExportTypesTests.swift
+git add Package.swift Sources/PhotosArchiveExporterCore/ExportTypes.swift Sources/PhotosArchiveExporterApp/main.swift Tests/PhotosArchiveExporterCoreTests/ExportTypesTests.swift docs/superpowers/plans/2026-05-04-photos-archive-exporter-implementation.md
 git commit -m "feat: add photos exporter core models"
 ```
 
