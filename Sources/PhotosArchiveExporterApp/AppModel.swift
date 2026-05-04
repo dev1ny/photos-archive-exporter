@@ -38,7 +38,10 @@ final class AppModel: ObservableObject {
     }
 
     var canExport: Bool {
-        destinationRoot != nil && !resources.isEmpty && phase != .scanning && phase != .exporting
+        libraryClient.authorizationState.canRead
+            && destinationRoot != nil
+            && !resources.isEmpty
+            && (phase == .ready || phase == .finished)
     }
 
     var exportedCount: Int {
@@ -68,6 +71,8 @@ final class AppModel: ObservableObject {
         if authorizationState.canRead {
             statusMessage = "Photos access authorized."
         } else {
+            resources = []
+            records = []
             phase = .failed
             lastError = "Photos access is \(authorizationState.displayName.lowercased())."
             statusMessage = "Photos access is required before scanning."
@@ -99,14 +104,17 @@ final class AppModel: ObservableObject {
 
         phase = .scanning
         lastError = nil
+        resources = []
+        records = []
         statusMessage = "Scanning the current Photos library..."
 
         do {
             resources = try await libraryClient.scanResources()
-            records = []
             phase = .ready
             statusMessage = "Found \(resources.count) exportable resources."
         } catch {
+            resources = []
+            records = []
             phase = .failed
             lastError = error.localizedDescription
             statusMessage = "Scan failed."
