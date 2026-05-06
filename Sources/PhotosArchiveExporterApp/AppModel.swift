@@ -18,6 +18,8 @@ final class AppModel: ObservableObject {
     @Published var destinationRoot: URL?
     @Published var resources: [AssetResourceDescriptor] = []
     @Published var records: [ExportRecord] = []
+    @Published var lastRunReport: ExportRunReport?
+    @Published var reportFiles: [ExportReportFile] = []
     @Published var statusMessage = "Choose a destination and authorize Photos access to begin."
     @Published var lastError: String?
 
@@ -73,6 +75,7 @@ final class AppModel: ObservableObject {
         } else {
             resources = []
             records = []
+            clearRunReport()
             phase = .failed
             lastError = "Photos access is \(authorizationState.displayName.lowercased())."
             statusMessage = "Photos access is required before scanning."
@@ -106,6 +109,7 @@ final class AppModel: ObservableObject {
         lastError = nil
         resources = []
         records = []
+        clearRunReport()
         statusMessage = "Scanning the current Photos library..."
 
         do {
@@ -115,6 +119,7 @@ final class AppModel: ObservableObject {
         } catch {
             resources = []
             records = []
+            clearRunReport()
             phase = .failed
             lastError = error.localizedDescription
             statusMessage = "Scan failed."
@@ -129,6 +134,7 @@ final class AppModel: ObservableObject {
         phase = .exporting
         lastError = nil
         records = []
+        clearRunReport()
         statusMessage = "Exporting \(resources.count) resources..."
 
         let startedAt = Date()
@@ -148,17 +154,28 @@ final class AppModel: ObservableObject {
             records = newRecords
 
             let combinedRecords = previousRecords + newRecords
+            let duplicateGroups = DuplicateReporter.strongDuplicateGroups(from: combinedRecords)
             try indexStore.saveIndex(combinedRecords)
-            _ = try indexStore.writeResourcesCSV(runID: runID, records: newRecords)
-            _ = try indexStore.writeErrorsCSV(runID: runID, records: newRecords)
-            _ = try indexStore.writeDuplicatesCSV(
+            let resourcesCSV = try indexStore.writeResourcesCSV(runID: runID, records: newRecords)
+            let errorsCSV = try indexStore.writeErrorsCSV(runID: runID, records: newRecords)
+            let duplicatesCSV = try indexStore.writeDuplicatesCSV(runID: runID, groups: duplicateGroups)
+
+            lastRunReport = ExportRunReport(
                 runID: runID,
-                groups: DuplicateReporter.strongDuplicateGroups(from: combinedRecords)
+                currentRunRecords: newRecords,
+                duplicateGroups: duplicateGroups
             )
+            reportFiles = [
+                ExportReportFile(kind: .archiveIndex, url: indexStore.indexURL),
+                ExportReportFile(kind: .resources, url: resourcesCSV),
+                ExportReportFile(kind: .errors, url: errorsCSV),
+                ExportReportFile(kind: .duplicates, url: duplicatesCSV)
+            ]
 
             phase = .finished
             statusMessage = "Export finished for run \(runID)."
         } catch {
+            clearRunReport()
             phase = .failed
             lastError = error.localizedDescription
             statusMessage = "Export failed."
@@ -173,6 +190,19 @@ final class AppModel: ObservableObject {
         NSWorkspace.shared.activateFileViewerSelecting([destinationRoot])
     }
 
+    func revealReports() {
+        guard !reportFiles.isEmpty else {
+            revealDestination()
+            return
+        }
+
+        NSWorkspace.shared.activateFileViewerSelecting(reportFiles.map(\.url))
+    }
+
+    func openReportFile(_ file: ExportReportFile) {
+        NSWorkspace.shared.open(file.url)
+    }
+
     static func makeRunID(date: Date) -> String {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
@@ -180,6 +210,11 @@ final class AppModel: ObservableObject {
         formatter.timeZone = TimeZone(secondsFromGMT: 0)
         formatter.dateFormat = "yyyy-MM-dd'T'HH-mm-ss'Z'"
         return formatter.string(from: date)
+    }
+
+    private func clearRunReport() {
+        lastRunReport = nil
+        reportFiles = []
     }
 }
 
@@ -197,5 +232,47 @@ extension PhotosAuthorizationState {
         case .restricted:
             return "Restricted"
         }
+    }
+}
+
+struct ExportReportFile: Identifiable, Equatable {
+    enum Kind: String, CaseIterable {
+        case archiveIndex
+        case resources
+        case errors
+        case duplicates
+
+        var displayName: String {
+            switch self {
+            case .archiveIndex:
+                return "Index JSON"
+            case .resources:
+                return "Resources CSV"
+            case .errors:
+                return "Errors CSV"
+            case .duplicates:
+                return "Duplicates CSV"
+            }
+        }
+
+        var systemImage: String {
+            switch self {
+            case .archiveIndex:
+                return "doc.text"
+            case .resources:
+                return "tablecells"
+            case .errors:
+                return "exclamationmark.triangle"
+            case .duplicates:
+                return "doc.on.doc"
+            }
+        }
+    }
+
+    let kind: Kind
+    let url: URL
+
+    var id: Kind {
+        kind
     }
 }
