@@ -4,14 +4,17 @@ struct ContentView: View {
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            header
-            controls
-            metrics
-            progressPanel
-            Spacer(minLength: 0)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                header
+                controls
+                metrics
+                progressPanel
+                resultPanel
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(28)
         }
-        .padding(28)
         .background(Color(nsColor: .windowBackgroundColor))
     }
 
@@ -127,6 +130,18 @@ struct ContentView: View {
         )
     }
 
+    @ViewBuilder
+    private var resultPanel: some View {
+        if let report = model.lastRunReport {
+            ExportResultsView(
+                report: report,
+                reportFiles: model.reportFiles,
+                revealReports: model.revealReports,
+                openReportFile: model.openReportFile
+            )
+        }
+    }
+
     private func controlLabel(_ title: String) -> some View {
         Text(title)
             .font(.subheadline.weight(.semibold))
@@ -149,4 +164,5 @@ struct ContentView: View {
                 .fill(Color(nsColor: .controlBackgroundColor))
         )
     }
+
 }
