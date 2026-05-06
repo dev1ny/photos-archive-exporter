@@ -14,6 +14,7 @@ Photos Archive Exporter 是一个原生 macOS 工具，用于从 Apple「照片�
 - 支持安全重复运行：已经导出的同一 Photos 资源会跳过。
 - 保留真实重复资源：不同 Photos 资产即使文件内容相同，也会被保留为独立文件。
 - 生成 JSON / CSV 报告，用于审计、排错和未来增量备份。
+- 导出完成后在 App 内显示本次运行结果，包括失败、警告、重复资源和改名冲突。
 - 生成 macOS 通用版 App，支持 Apple silicon 和 Intel 芯片。
 
 ## 下载
@@ -21,7 +22,7 @@ Photos Archive Exporter 是一个原生 macOS 工具，用于从 Apple「照片�
 请到 GitHub Releases 下载最新版：
 
 ```text
-PhotosArchiveExporter-v0.1.0-macos-universal.zip
+PhotosArchiveExporter-v0.1.1-macos-universal.zip
 ```
 
 解压后打开：
@@ -49,7 +50,7 @@ Photos Archive Exporter.app
 4. 点击 `Choose Folder`，选择导出目标文件夹。
 5. 点击 `Scan Library`，扫描当前图库中的可导出资源。
 6. 点击 `Start Full Export`，开始全量导出。
-7. 导出完成后，在目标目录中查看照片归档和 `_photos_archive_exporter` 报告目录。
+7. 导出完成后，在 App 内查看本次运行结果，并在目标目录中查看照片归档和 `_photos_archive_exporter` 报告目录。
 
 ## 归档目录结构
 
@@ -93,6 +94,13 @@ Destination/
 - `errors.csv`：失败资源和错误原因。
 - `duplicates.csv`：强重复报告，基于 SHA-256 哈希，不会自动删除任何文件。
 
+App 会在导出完成后读取同一批导出记录并显示本次运行结果，帮助你快速看到：
+
+- 哪些资源导出失败。
+- 哪些资源存在元数据警告。
+- 哪些资源内容重复。
+- 哪些资源因为目标路径冲突而被安全改名。
+
 CSV 输出会处理逗号、引号、换行，并防止表格软件公式注入。
 
 ## 安全设计
@@ -131,7 +139,7 @@ scripts/build_app.sh
 
 ```text
 dist/Photos Archive Exporter.app
-dist/PhotosArchiveExporter-v0.1.0-macos-universal.zip
+dist/PhotosArchiveExporter-v0.1.1-macos-universal.zip
 ```
 
 验证架构：
@@ -154,7 +162,7 @@ codesign --verify --deep --strict --verbose=2 "dist/Photos Archive Exporter.app"
 
 ## 当前限制
 
-- v0.1.0 聚焦全量导出，尚未提供单独的增量备份模式。
+- v0.1.1 聚焦全量导出和导出结果审计，尚未提供单独的增量备份模式。
 - 不会自动从 iCloud 下载未保存在本机的原片。
 - 不导出 Photos 中的编辑后版本。
 - 不按相簿、人物、地点或事件归档。
@@ -174,9 +182,8 @@ codesign --verify --deep --strict --verbose=2 "dist/Photos Archive Exporter.app"
 
 ## 版本
 
-当前版本：`v0.1.0`
+当前版本：`v0.1.1`
 
 ## 许可证
 
 尚未选择开源许可证。在添加 LICENSE 文件前，默认保留所有权利。
-

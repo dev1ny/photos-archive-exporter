@@ -7,7 +7,7 @@ Photos Archive Exporter 是一个原生 macOS 工具，用于从 Apple「照片�
 请在 GitHub Release 页面下载：
 
 ```text
-PhotosArchiveExporter-v0.1.0-macos-universal.zip
+PhotosArchiveExporter-v0.1.1-macos-universal.zip
 ```
 
 这个包是 macOS 通用版，支持：
@@ -24,7 +24,7 @@ PhotosArchiveExporter-v0.1.0-macos-universal.zip
 5. 点击 **Scan Library**。
 6. 点击 **Start Full Export**。
 
-导出完成后，目标目录会包含按年、月、日整理的原始文件，以及 `_photos_archive_exporter/` 报告目录。
+导出完成后，App 会显示本次运行结果，目标目录会包含按年、月、日整理的原始文件，以及 `_photos_archive_exporter/` 报告目录。
 
 ## 归档结构
 
@@ -45,6 +45,8 @@ Photos Archive Exporter 不会修改 Photos 图库。
 
 它不会删除、编辑或移动 Photos 中的任何资产，也不会自动删除重复文件。重复内容会被保留，并在报告中标记。
 
+导出结果面板会显示失败、警告、重复资源和改名冲突，方便你在打开 CSV 前先快速判断是否需要处理异常。
+
 ## 适用场景
 
 - 多年 Photos 图库全量备份。
@@ -58,4 +60,3 @@ Photos Archive Exporter 不会修改 Photos 图库。
 - 需要原片已经保存在本机。
 - 暂不处理 iCloud 原片自动下载。
 - 暂不导出编辑后版本。
-
