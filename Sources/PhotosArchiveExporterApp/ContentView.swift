@@ -10,6 +10,7 @@ struct ContentView: View {
                 controls
                 metrics
                 progressPanel
+                faceAnalysisPanel
                 resultPanel
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -37,7 +38,7 @@ struct ContentView: View {
                 Button("Authorize") {
                     Task { await model.requestPhotosAccess() }
                 }
-                .disabled(model.phase == .scanning || model.phase == .exporting)
+                .disabled(model.isBusy)
             }
 
             GridRow {
@@ -50,7 +51,7 @@ struct ContentView: View {
                     Button("Choose Folder") {
                         model.chooseDestination()
                     }
-                    .disabled(model.phase == .scanning || model.phase == .exporting)
+                    .disabled(model.isBusy)
 
                     Button("Reveal Destination") {
                         model.revealDestination()
@@ -102,7 +103,7 @@ struct ContentView: View {
     private var progressPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
-                if model.phase == .scanning || model.phase == .exporting {
+                if model.isBusy {
                     ProgressView()
                         .controlSize(.small)
                 }
@@ -128,6 +129,77 @@ struct ContentView: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(Color(nsColor: .separatorColor))
         )
+    }
+
+    private var faceAnalysisPanel: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Face Analysis")
+                        .font(.title3.weight(.semibold))
+                    Text(faceAnalysisStatusText)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+
+                Spacer(minLength: 12)
+
+                HStack(spacing: 10) {
+                    Button {
+                        Task { await model.startFaceAnalysis() }
+                    } label: {
+                        Label("Analyze Exported Photos", systemImage: "face.smiling")
+                    }
+                    .disabled(!model.canAnalyzeFaces)
+
+                    Button {
+                        model.revealFaceAnalysisReports()
+                    } label: {
+                        Label("Reveal Reports", systemImage: "folder")
+                    }
+                    .disabled(model.faceAnalysisReportFiles.isEmpty)
+                }
+            }
+
+            Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 14) {
+                GridRow {
+                    metric("Analyzed", value: model.faceAnalyzedCount)
+                    metric("Failed", value: model.faceAnalysisFailedCount)
+                    metric("Faces Detected", value: model.facesDetectedCount)
+                }
+            }
+
+            if !model.faceAnalysisReportFiles.isEmpty {
+                HStack(spacing: 10) {
+                    ForEach(model.faceAnalysisReportFiles) { file in
+                        Button {
+                            model.openFaceAnalysisReportFile(file)
+                        } label: {
+                            Label(file.kind.displayName, systemImage: file.kind.systemImage)
+                        }
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color(nsColor: .separatorColor))
+        )
+    }
+
+    private var faceAnalysisStatusText: String {
+        if let summary = model.lastFaceAnalysisSummary {
+            return "Run \(summary.runID). Reports are written under the archive support folder."
+        }
+
+        if model.faceAnalysisEligibleImageCount > 0 {
+            return "\(model.faceAnalysisEligibleImageCount) exported photos are ready for local analysis."
+        }
+
+        return "Export photos first, then run local face analysis on this run."
     }
 
     @ViewBuilder

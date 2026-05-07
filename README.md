@@ -15,6 +15,8 @@ Photos Archive Exporter 是一个原生 macOS 工具，用于从 Apple「照片�
 - 保留真实重复资源：不同 Photos 资产即使文件内容相同，也会被保留为独立文件。
 - 生成 JSON / CSV 报告，用于审计、排错和未来增量备份。
 - 导出完成后在 App 内显示本次运行结果，包括失败、警告、重复资源和改名冲突。
+- 可对本次已导出的图片运行本地 Face Analysis，统计检测到的人脸数量并生成 JSON / CSV 报告。
+- 带有 macOS App 图标。
 - 生成 macOS 通用版 App，支持 Apple silicon 和 Intel 芯片。
 
 ## 下载
@@ -22,7 +24,7 @@ Photos Archive Exporter 是一个原生 macOS 工具，用于从 Apple「照片�
 请到 GitHub Releases 下载最新版：
 
 ```text
-PhotosArchiveExporter-v0.1.1-macos-universal.zip
+PhotosArchiveExporter-v0.2.0-macos-universal.zip
 ```
 
 解压后打开：
@@ -51,6 +53,7 @@ Photos Archive Exporter.app
 5. 点击 `Scan Library`，扫描当前图库中的可导出资源。
 6. 点击 `Start Full Export`，开始全量导出。
 7. 导出完成后，在 App 内查看本次运行结果，并在目标目录中查看照片归档和 `_photos_archive_exporter` 报告目录。
+8. 如需本地人脸检测，点击 `Analyze Exported Photos`，对本次已导出的图片生成 Face Analysis 报告。
 
 ## 归档目录结构
 
@@ -85,6 +88,13 @@ Destination/
         2026-05-04T20-30-00Z-resources.csv
         2026-05-04T20-30-00Z-errors.csv
         2026-05-04T20-30-00Z-duplicates.csv
+    face-analysis-index.json
+    face-analysis-runs/
+      2026-05-08T05-30-00Z/
+        2026-05-08T05-30-00Z-summary.json
+        2026-05-08T05-30-00Z-assets.csv
+        2026-05-08T05-30-00Z-faces.csv
+        2026-05-08T05-30-00Z-errors.csv
 ```
 
 报告用途：
@@ -93,6 +103,8 @@ Destination/
 - `resources.csv`：本次运行每个资源的导出记录。
 - `errors.csv`：失败资源和错误原因。
 - `duplicates.csv`：强重复报告，基于 SHA-256 哈希，不会自动删除任何文件。
+- `face-analysis-index.json`：本地图片人脸检测索引。
+- `face-analysis-runs/`：每次 Face Analysis 的 summary、assets、faces 和 errors CSV / JSON 报告。
 
 App 会在导出完成后读取同一批导出记录并显示本次运行结果，帮助你快速看到：
 
@@ -102,6 +114,16 @@ App 会在导出完成后读取同一批导出记录并显示本次运行结果�
 - 哪些资源因为目标路径冲突而被安全改名。
 
 CSV 输出会处理逗号、引号、换行，并防止表格软件公式注入。
+
+## Face Analysis
+
+Face Analysis 是导出后的可选本地分析流程：
+
+- 只分析本次导出记录中的图片文件。
+- 使用 Apple Vision 在本机检测人脸、脸框和可用的人脸 landmarks。
+- 在 App 内显示 analyzed、failed 和 faces detected 统计。
+- 报告写入目标目录的 `_photos_archive_exporter/face-analysis-runs/`。
+- 不上传图片，不调用云端服务，不识别“是谁”，也不读取 Apple Photos 的人物数据库。
 
 ## 安全设计
 
@@ -139,7 +161,7 @@ scripts/build_app.sh
 
 ```text
 dist/Photos Archive Exporter.app
-dist/PhotosArchiveExporter-v0.1.1-macos-universal.zip
+dist/PhotosArchiveExporter-v0.2.0-macos-universal.zip
 ```
 
 验证架构：
@@ -162,10 +184,11 @@ codesign --verify --deep --strict --verbose=2 "dist/Photos Archive Exporter.app"
 
 ## 当前限制
 
-- v0.1.1 聚焦全量导出和导出结果审计，尚未提供单独的增量备份模式。
+- v0.2.0 聚焦全量导出、导出结果审计和导出后本地 Face Analysis，尚未提供单独的增量备份模式。
 - 不会自动从 iCloud 下载未保存在本机的原片。
 - 不导出 Photos 中的编辑后版本。
 - 不按相簿、人物、地点或事件归档。
+- Face Analysis 只做本地人脸检测，不做人物身份识别。
 - 暂未提供暂停 / 取消导出按钮。
 - 当前 release 未做 Developer ID 公证，不适合作为正式公众发行包。
 
@@ -176,13 +199,14 @@ codesign --verify --deep --strict --verbose=2 "dist/Photos Archive Exporter.app"
 - PhotoKit
 - ImageIO
 - AVFoundation
+- Vision
 - CryptoKit
 - XCTest
 - Swift Package Manager
 
 ## 版本
 
-当前版本：`v0.1.1`
+当前版本：`v0.2.0`
 
 ## 许可证
 

@@ -10,6 +10,7 @@ final class AppModel: ObservableObject {
         case scanning = "Scanning"
         case ready = "Ready"
         case exporting = "Exporting"
+        case analyzingFaces = "Analyzing Faces"
         case finished = "Finished"
         case failed = "Failed"
     }
@@ -20,23 +21,32 @@ final class AppModel: ObservableObject {
     @Published var records: [ExportRecord] = []
     @Published var lastRunReport: ExportRunReport?
     @Published var reportFiles: [ExportReportFile] = []
+    @Published var lastFaceAnalysisSummary: FaceAnalysisRunSummary?
+    @Published var faceAnalysisReportFiles: [FaceAnalysisReportFile] = []
     @Published var statusMessage = "Choose a destination and authorize Photos access to begin."
     @Published var lastError: String?
 
     let libraryClient: PhotoKitLibraryClient
     private let resourceWriter: any ResourceWriting
+    private let faceAnalysisCoordinator: FaceAnalysisRunCoordinator
 
     init(
         libraryClient: PhotoKitLibraryClient? = nil,
-        resourceWriter: any ResourceWriting = PhotoKitResourceWriter()
+        resourceWriter: any ResourceWriting = PhotoKitResourceWriter(),
+        faceAnalysisCoordinator: FaceAnalysisRunCoordinator = FaceAnalysisRunCoordinator()
     ) {
         self.libraryClient = libraryClient ?? PhotoKitLibraryClient()
         self.resourceWriter = resourceWriter
+        self.faceAnalysisCoordinator = faceAnalysisCoordinator
         self.libraryClient.refreshAuthorizationState()
     }
 
+    var isBusy: Bool {
+        phase == .scanning || phase == .exporting || phase == .analyzingFaces
+    }
+
     var canScan: Bool {
-        libraryClient.authorizationState.canRead && phase != .scanning && phase != .exporting
+        libraryClient.authorizationState.canRead && !isBusy
     }
 
     var canExport: Bool {
@@ -44,6 +54,26 @@ final class AppModel: ObservableObject {
             && destinationRoot != nil
             && !resources.isEmpty
             && (phase == .ready || phase == .finished)
+    }
+
+    var faceAnalysisEligibleImageCount: Int {
+        records.filter { $0.mediaType == .image && $0.status != .failed }.count
+    }
+
+    var canAnalyzeFaces: Bool {
+        destinationRoot != nil && faceAnalysisEligibleImageCount > 0 && !isBusy
+    }
+
+    var faceAnalyzedCount: Int {
+        lastFaceAnalysisSummary?.analyzedAssetCount ?? 0
+    }
+
+    var faceAnalysisFailedCount: Int {
+        lastFaceAnalysisSummary?.failedAssetCount ?? 0
+    }
+
+    var facesDetectedCount: Int {
+        lastFaceAnalysisSummary?.facesDetectedCount ?? 0
     }
 
     var exportedCount: Int {
@@ -76,6 +106,7 @@ final class AppModel: ObservableObject {
             resources = []
             records = []
             clearRunReport()
+            clearFaceAnalysisReport()
             phase = .failed
             lastError = "Photos access is \(authorizationState.displayName.lowercased())."
             statusMessage = "Photos access is required before scanning."
@@ -97,6 +128,7 @@ final class AppModel: ObservableObject {
 
         destinationRoot = url
         lastError = nil
+        clearFaceAnalysisReport()
         statusMessage = "Destination set to \(url.path)."
     }
 
@@ -110,6 +142,7 @@ final class AppModel: ObservableObject {
         resources = []
         records = []
         clearRunReport()
+        clearFaceAnalysisReport()
         statusMessage = "Scanning the current Photos library..."
 
         do {
@@ -120,6 +153,7 @@ final class AppModel: ObservableObject {
             resources = []
             records = []
             clearRunReport()
+            clearFaceAnalysisReport()
             phase = .failed
             lastError = error.localizedDescription
             statusMessage = "Scan failed."
@@ -135,6 +169,7 @@ final class AppModel: ObservableObject {
         lastError = nil
         records = []
         clearRunReport()
+        clearFaceAnalysisReport()
         statusMessage = "Exporting \(resources.count) resources..."
 
         let startedAt = Date()
@@ -182,6 +217,47 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func startFaceAnalysis() async {
+        guard canAnalyzeFaces, let destinationRoot else {
+            return
+        }
+
+        phase = .analyzingFaces
+        lastError = nil
+        clearFaceAnalysisReport()
+        statusMessage = "Analyzing \(faceAnalysisEligibleImageCount) exported photos..."
+
+        let startedAt = Date()
+        let runID = Self.makeRunID(date: startedAt)
+
+        do {
+            let result = try await faceAnalysisCoordinator.analyzeAndWriteReports(
+                records: records,
+                destinationRoot: destinationRoot,
+                runID: runID,
+                settings: .defaultLowResource,
+                analyzedAt: startedAt
+            )
+
+            lastFaceAnalysisSummary = result.summary
+            faceAnalysisReportFiles = [
+                FaceAnalysisReportFile(kind: .index, url: result.reportURLs.index),
+                FaceAnalysisReportFile(kind: .summary, url: result.reportURLs.summary),
+                FaceAnalysisReportFile(kind: .assets, url: result.reportURLs.assets),
+                FaceAnalysisReportFile(kind: .faces, url: result.reportURLs.faces),
+                FaceAnalysisReportFile(kind: .errors, url: result.reportURLs.errors)
+            ]
+
+            phase = .finished
+            statusMessage = "Face analysis finished for run \(runID)."
+        } catch {
+            clearFaceAnalysisReport()
+            phase = .failed
+            lastError = error.localizedDescription
+            statusMessage = "Face analysis failed."
+        }
+    }
+
     func revealDestination() {
         guard let destinationRoot else {
             return
@@ -203,6 +279,19 @@ final class AppModel: ObservableObject {
         NSWorkspace.shared.open(file.url)
     }
 
+    func revealFaceAnalysisReports() {
+        guard !faceAnalysisReportFiles.isEmpty else {
+            revealDestination()
+            return
+        }
+
+        NSWorkspace.shared.activateFileViewerSelecting(faceAnalysisReportFiles.map(\.url))
+    }
+
+    func openFaceAnalysisReportFile(_ file: FaceAnalysisReportFile) {
+        NSWorkspace.shared.open(file.url)
+    }
+
     static func makeRunID(date: Date) -> String {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
@@ -215,6 +304,11 @@ final class AppModel: ObservableObject {
     private func clearRunReport() {
         lastRunReport = nil
         reportFiles = []
+    }
+
+    private func clearFaceAnalysisReport() {
+        lastFaceAnalysisSummary = nil
+        faceAnalysisReportFiles = []
     }
 }
 
@@ -265,6 +359,49 @@ struct ExportReportFile: Identifiable, Equatable {
                 return "exclamationmark.triangle"
             case .duplicates:
                 return "doc.on.doc"
+            }
+        }
+    }
+
+    let kind: Kind
+    let url: URL
+
+    var id: Kind {
+        kind
+    }
+}
+
+struct FaceAnalysisReportFile: Identifiable, Equatable {
+    enum Kind: String, CaseIterable {
+        case index
+        case summary
+        case assets
+        case faces
+        case errors
+
+        var displayName: String {
+            switch self {
+            case .index:
+                return "Index JSON"
+            case .summary:
+                return "Summary JSON"
+            case .assets:
+                return "Assets CSV"
+            case .faces:
+                return "Faces CSV"
+            case .errors:
+                return "Errors CSV"
+            }
+        }
+
+        var systemImage: String {
+            switch self {
+            case .index, .summary:
+                return "doc.text"
+            case .assets, .faces:
+                return "tablecells"
+            case .errors:
+                return "exclamationmark.triangle"
             }
         }
     }
