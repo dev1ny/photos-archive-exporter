@@ -23,6 +23,7 @@ public struct ExportRunner {
             exportRunDate: exportRunDate,
             existingRecords: existingRecords,
             batchSize: max(resources.count, 1),
+            didPlanRecord: { _ in },
             didExportBatch: { _ in }
         )
     }
@@ -34,6 +35,7 @@ public struct ExportRunner {
         exportRunDate: Date,
         existingRecords: [ExportRecord] = [],
         batchSize: Int,
+        didPlanRecord: (ExportRecord) throws -> Void = { _ in },
         didExportBatch: ([ExportRecord]) throws -> Void
     ) async rethrows -> [ExportRecord] {
         var records: [ExportRecord] = []
@@ -47,7 +49,8 @@ public struct ExportRunner {
                 destinationRoot: destinationRoot,
                 runID: runID,
                 exportRunDate: exportRunDate,
-                knownRecordKeys: knownRecordKeys
+                knownRecordKeys: knownRecordKeys,
+                didPlanRecord: didPlanRecord
             )
             records.append(record)
             batchRecords.append(record)
@@ -66,7 +69,14 @@ public struct ExportRunner {
         return records
     }
 
-    private func export(resource: AssetResourceDescriptor, destinationRoot: URL, runID: String, exportRunDate: Date, knownRecordKeys: KnownExportRecordKeys) async -> ExportRecord {
+    private func export(
+        resource: AssetResourceDescriptor,
+        destinationRoot: URL,
+        runID: String,
+        exportRunDate: Date,
+        knownRecordKeys: KnownExportRecordKeys,
+        didPlanRecord: (ExportRecord) throws -> Void
+    ) async -> ExportRecord {
         let temporaryURL = temporaryDirectory(root: destinationRoot).appendingPathComponent(UUID().uuidString, isDirectory: false)
         var fallbackDecision = fallbackCaptureDateDecision(for: resource, exportRunDate: exportRunDate)
         var fallbackDestination = pathPlanner.preferredDestination(root: destinationRoot, captureDate: fallbackDecision.date, originalFilename: resource.originalFilename)
@@ -108,6 +118,17 @@ public struct ExportRunner {
                 )
             }
 
+            let plannedRecord = makeRecord(
+                resource: resource,
+                runID: runID,
+                destination: exportDestination.url,
+                captureDateDecision: captureDateDecision,
+                fileSize: temporarySize,
+                sha256: temporaryHash,
+                status: .planned,
+                errorMessage: nil
+            )
+            try didPlanRecord(plannedRecord)
             try moveTemporaryFile(from: temporaryURL, to: exportDestination.url)
             return makeRecord(
                 resource: resource,

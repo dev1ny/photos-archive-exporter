@@ -27,7 +27,7 @@ Photos Archive Exporter 是一个原生 macOS 工具，用于从 Apple「照片�
 请到 GitHub Releases 下载最新版：
 
 ```text
-PhotosArchiveExporter-v0.3.1-macos-universal.zip
+PhotosArchiveExporter-v0.3.2-macos-universal.zip
 ```
 
 解压后打开：
@@ -130,8 +130,9 @@ CSV 输出会处理逗号、引号、换行，并防止表格软件公式注入�
 - 如果目标文件缺失，则重新导出补回。
 - 如果目标文件大小或 SHA-256 与索引不一致，则重新导出并保留冲突安全命名规则。
 - 如果旧记录缺少可验证的 hash 或文件大小，则重新导出。
+- 如果上次运行在文件落盘后、最终索引写入前中断，`planned` checkpoint 会在下次增量运行中通过文件大小和 SHA-256 恢复为 `skippedExisting`，避免重复复制。
 
-每次增量运行仍会写入 `resources.csv`、`errors.csv`、`duplicates.csv` 和 `incremental-plan.csv`，并把本次 skipped / exported / failed / renamed 统计显示在 App 内。
+每次增量运行仍会写入 `resources.csv`、`errors.csv`、`duplicates.csv` 和 `incremental-plan.csv`，并把本次 skipped / exported / failed / renamed 统计显示在 App 内。`incremental-plan.csv` 中的 `recoverPlannedCheckpoint` 表示本次恢复了上次中断时已经完整落盘的资源。
 
 ## 大图库注意事项
 
@@ -141,6 +142,7 @@ CSV 输出会处理逗号、引号、换行，并防止表格软件公式注入�
 - 旧版 `archive-index.json` 会自动迁移到 SQLite；迁移完成后，后续运行只按当前批次查询相关旧记录。
 - 扫描后的导出和增量规划按批处理，每批完成后立刻写回 SQLite，减少中途失败时丢失进度的风险。
 - 导出、增量备份和 Face Analysis 会按批推进进度条，长时间运行时可以看到当前处理数量和百分比。
+- 每个资源在最终移动到归档目录前会先写入 `planned` checkpoint；如果 App 被强制退出，下次选择同一目标目录并运行 `Incremental Backup` 时，会优先恢复这些已完整落盘的资源。
 - 导出时用索引化的 `(assetLocalIdentifier, resourceIdentifier, destinationPath, sha256)` 查找旧记录，避免随着历史记录变多出现二次方级别的查找成本。
 - CSV 报告使用流式写出，不再把整份 CSV 先拼成一个超大字符串。
 - Face Analysis 会按 `imageLongEdgeLimit` 下采样后再交给 Vision，避免直接解码超大原图。
@@ -195,7 +197,7 @@ scripts/build_app.sh
 
 ```text
 dist/Photos Archive Exporter.app
-dist/PhotosArchiveExporter-v0.3.1-macos-universal.zip
+dist/PhotosArchiveExporter-v0.3.2-macos-universal.zip
 ```
 
 验证架构：
@@ -240,7 +242,7 @@ codesign --verify --deep --strict --verbose=2 "dist/Photos Archive Exporter.app"
 
 ## 版本
 
-当前版本：`v0.3.1`
+当前版本：`v0.3.2`
 
 ## 许可证
 

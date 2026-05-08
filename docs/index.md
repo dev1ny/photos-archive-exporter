@@ -7,7 +7,7 @@ Photos Archive Exporter 是一个原生 macOS 工具，用于从 Apple「照片�
 请在 GitHub Release 页面下载：
 
 ```text
-PhotosArchiveExporter-v0.3.1-macos-universal.zip
+PhotosArchiveExporter-v0.3.2-macos-universal.zip
 ```
 
 这个包是 macOS 通用版，支持：
@@ -27,6 +27,8 @@ PhotosArchiveExporter-v0.3.1-macos-universal.zip
 8. 导出后可点击 **Analyze Exported Photos**，对本次导出的图片运行本地 Face Analysis。
 
 导出完成后，App 会显示本次运行结果，目标目录会包含按年、月、日整理的原始文件，以及 `_photos_archive_exporter/` 报告目录。Face Analysis 报告也会保存在同一支持目录中。
+
+如果运行中断，请重新打开 App，选择同一目标目录，重新扫描后点击 **Incremental Backup**。程序会用 SQLite 索引和 `planned` checkpoint 恢复已经完整落盘的资源，尽量避免从头复制。
 
 ## 归档结构
 

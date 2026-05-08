@@ -95,7 +95,7 @@
 
     <h2>下载文件</h2>
     <p>在 Release 页面下载：</p>
-    <pre><code>PhotosArchiveExporter-v0.3.1-macos-universal.zip</code></pre>
+    <pre><code>PhotosArchiveExporter-v0.3.2-macos-universal.zip</code></pre>
     <p>这个包是 macOS 通用版，同时支持 Apple silicon <code>arm64</code> 和 Intel <code>x86_64</code>。</p>
 
     <h2>快速使用</h2>
@@ -112,6 +112,7 @@
 
     <h2>导出结果</h2>
     <p>导出完成后，App 会显示本次运行结果，包括失败、警告、重复资源和改名冲突。对应的 JSON 和 CSV 报告仍会保存在目标目录的 <code>_photos_archive_exporter</code> 文件夹中。Face Analysis 会额外生成本地人脸检测报告。</p>
+    <p>如果运行中断，请重新打开 App，选择同一目标目录，重新扫描后点击 <strong>Incremental Backup</strong>。程序会用 SQLite 索引和 <code>planned</code> checkpoint 恢复已经完整落盘的资源，尽量避免从头复制。</p>
 
     <h2>归档结构</h2>
     <pre><code>Destination/

@@ -93,6 +93,35 @@ final class IncrementalBackupPlannerTests: XCTestCase {
         XCTAssertEqual(plan.entries.map(\.action), [.exportUnverified])
     }
 
+    func testRecoversCompletedPlannedCheckpointWhenDestinationStillMatches() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let destination = directory.appendingPathComponent("Archive/IMG_0001.HEIC")
+        try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("hello".utf8).write(to: destination)
+        let resource = AssetResourceDescriptor.incrementalSample(assetID: "asset-1", resourceID: "resource-1")
+        let plannedRecord = ExportRecord.incrementalSample(
+            runID: "interrupted-run",
+            resource: resource,
+            destinationPath: destination.path,
+            fileSize: 5,
+            sha256: "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+            status: .planned
+        )
+
+        let plan = try IncrementalBackupPlanner().plan(
+            resources: [resource],
+            previousRecords: [plannedRecord],
+            runID: "recovery-run",
+            exportRunDate: Date(timeIntervalSince1970: 100)
+        )
+
+        XCTAssertTrue(plan.resourcesToExport.isEmpty)
+        XCTAssertEqual(plan.entries.map(\.action), [.recoverPlannedCheckpoint])
+        XCTAssertEqual(plan.skippedRecords.count, 1)
+        XCTAssertEqual(plan.skippedRecords[0].status, .skippedExisting)
+        XCTAssertEqual(plan.skippedRecords[0].sha256, plannedRecord.sha256)
+    }
+
     func testExportsWhenPreviousDestinationCannotBeReadForVerification() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let destination = directory.appendingPathComponent("Archive/IMG_0001.HEIC")

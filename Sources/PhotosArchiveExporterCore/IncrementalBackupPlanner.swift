@@ -2,6 +2,7 @@ import Foundation
 
 public enum IncrementalBackupAction: String, Codable, Equatable, CaseIterable {
     case skipExisting
+    case recoverPlannedCheckpoint
     case exportNew
     case exportMissingDestination
     case exportChanged
@@ -77,7 +78,7 @@ public struct IncrementalBackupPlanner {
             let decision = decision(for: previousRecord)
             entries.append(.init(resource: resource, action: decision.action, previousRecord: previousRecord, note: decision.note))
 
-            if decision.action == .skipExisting {
+            if decision.action == .skipExisting || decision.action == .recoverPlannedCheckpoint {
                 skippedRecords.append(makeSkippedRecord(from: previousRecord, resource: resource, runID: runID, exportRunDate: exportRunDate))
             } else {
                 resourcesToExport.append(resource)
@@ -113,6 +114,10 @@ public struct IncrementalBackupPlanner {
             let actualHash = try FileHasher.sha256Hex(for: URL(fileURLWithPath: record.destinationPath))
             guard actualHash == expectedHash else {
                 return (.exportChanged, "Previous destination file hash changed.")
+            }
+
+            if record.status == .planned {
+                return (.recoverPlannedCheckpoint, "Recovered an interrupted planned checkpoint whose destination file matches the archive index.")
             }
 
             return (.skipExisting, "Previous destination file still matches the archive index.")

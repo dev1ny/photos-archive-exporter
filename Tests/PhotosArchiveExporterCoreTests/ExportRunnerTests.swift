@@ -236,7 +236,7 @@ final class ExportRunnerTests: XCTestCase {
         let runner = ExportRunner(resourceWriter: PerResourceFakeWriter())
         var batchSizes: [Int] = []
 
-        let records = await runner.exportInBatches(
+        let records = try await runner.exportInBatches(
             resources: resources,
             destinationRoot: directory,
             runID: "run-1",
@@ -250,6 +250,49 @@ final class ExportRunnerTests: XCTestCase {
         XCTAssertEqual(records.count, 5)
         XCTAssertEqual(batchSizes, [2, 2, 1])
         XCTAssertEqual(records.map(\.status), Array(repeating: .exported, count: 5))
+    }
+
+    func testWritesPlannedCheckpointBeforeMovingCommittedFile() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let resource = AssetResourceDescriptor(
+            assetLocalIdentifier: "asset-1",
+            resourceIdentifier: "resource-1",
+            resourceType: .photo,
+            mediaType: .image,
+            originalFilename: "IMG_0001.HEIC",
+            uniformTypeIdentifier: "public.heic",
+            assetCreationDate: Date(timeIntervalSince1970: 0)
+        )
+        let runner = ExportRunner(
+            resourceWriter: FakeResourceWriter(data: Data("hello".utf8)),
+            pathPlanner: PathPlanner(calendar: Calendar(identifier: .gregorian), timeZone: TimeZone(secondsFromGMT: 0)!)
+        )
+        var plannedRecords: [ExportRecord] = []
+
+        let records = try await runner.exportInBatches(
+            resources: [resource],
+            destinationRoot: directory,
+            runID: "run-1",
+            exportRunDate: Date(timeIntervalSince1970: 10),
+            existingRecords: [],
+            batchSize: 1,
+            didPlanRecord: { plannedRecord in
+                try validatePlannedCheckpoint(plannedRecord, plannedRecords: &plannedRecords)
+            }
+        ) { _ in }
+
+        XCTAssertEqual(plannedRecords.count, 1)
+        XCTAssertEqual(records[0].status, .exported)
+        XCTAssertEqual(records[0].destinationPath, plannedRecords[0].destinationPath)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: plannedRecords[0].destinationPath))
+    }
+
+    private func validatePlannedCheckpoint(_ plannedRecord: ExportRecord, plannedRecords: inout [ExportRecord]) throws {
+        XCTAssertEqual(plannedRecord.status, .planned)
+        XCTAssertEqual(plannedRecord.fileSize, 5)
+        XCTAssertEqual(plannedRecord.sha256, "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: plannedRecord.destinationPath))
+        plannedRecords.append(plannedRecord)
     }
 }
 

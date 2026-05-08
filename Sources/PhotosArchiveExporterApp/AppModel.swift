@@ -455,18 +455,22 @@ final class AppModel: ObservableObject {
                 runID: runID,
                 exportRunDate: startedAt,
                 existingRecords: previousRecords,
-                batchSize: Self.progressUpdateInterval
-            ) { batchRecords in
-                try indexStore.saveIndex(batchRecords)
-                currentRunRecords.append(contentsOf: batchRecords)
-                completedCount += batchRecords.count
-                updateProgress(
-                    title: ExportMode.full.progressTitle,
-                    completed: completedCount,
-                    total: resources.count,
-                    detail: "Exported \(completedCount.formatted()) of \(resources.count.formatted()) resources."
-                )
-            }
+                batchSize: Self.progressUpdateInterval,
+                didPlanRecord: { plannedRecord in
+                    try indexStore.saveIndex([plannedRecord])
+                },
+                didExportBatch: { batchRecords in
+                    try indexStore.saveIndex(batchRecords)
+                    currentRunRecords.append(contentsOf: batchRecords)
+                    completedCount += batchRecords.count
+                    updateProgress(
+                        title: ExportMode.full.progressTitle,
+                        completed: completedCount,
+                        total: resources.count,
+                        detail: "Exported \(completedCount.formatted()) of \(resources.count.formatted()) resources."
+                    )
+                }
+            )
         }
 
         return currentRunRecords
@@ -505,22 +509,26 @@ final class AppModel: ObservableObject {
                 detail: "Incremental backup verified \(skippedCount.formatted()) existing resources and queued \(queuedCount.formatted()) resources."
             )
 
-            let exportedRecords = await runner.exportInBatches(
+            let exportedRecords = try await runner.exportInBatches(
                 resources: plan.resourcesToExport,
                 destinationRoot: destinationRoot,
                 runID: runID,
                 exportRunDate: startedAt,
                 existingRecords: previousRecords + plan.skippedRecords,
-                batchSize: Self.progressUpdateInterval
-            ) { exportedBatch in
-                completedCount += exportedBatch.count
-                updateProgress(
-                    title: ExportMode.incremental.progressTitle,
-                    completed: completedCount,
-                    total: resources.count,
-                    detail: "Incremental backup processed \(completedCount.formatted()) of \(resources.count.formatted()) resources."
-                )
-            }
+                batchSize: Self.progressUpdateInterval,
+                didPlanRecord: { plannedRecord in
+                    try indexStore.saveIndex([plannedRecord])
+                },
+                didExportBatch: { exportedBatch in
+                    completedCount += exportedBatch.count
+                    updateProgress(
+                        title: ExportMode.incremental.progressTitle,
+                        completed: completedCount,
+                        total: resources.count,
+                        detail: "Incremental backup processed \(completedCount.formatted()) of \(resources.count.formatted()) resources."
+                    )
+                }
+            )
             let batchRecords = plan.currentRunRecords(exportedRecords: exportedRecords)
             try indexStore.saveIndex(batchRecords)
             currentRunRecords.append(contentsOf: batchRecords)
