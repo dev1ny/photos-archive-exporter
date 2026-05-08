@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosArchiveExporterCore
 
 struct ContentView: View {
     @EnvironmentObject private var model: AppModel
@@ -121,8 +122,12 @@ struct ContentView: View {
                 Spacer()
             }
 
-            Text(model.statusMessage)
-                .foregroundStyle(.secondary)
+            if let progress = model.progress {
+                progressBar(for: progress)
+            } else {
+                Text(model.statusMessage)
+                    .foregroundStyle(.secondary)
+            }
 
             if let lastError = model.lastError {
                 Text(lastError)
@@ -136,6 +141,41 @@ struct ContentView: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(Color(nsColor: .separatorColor))
         )
+    }
+
+    private func progressBar(for progress: ArchiveProgress) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Text(progress.title)
+                    .font(.subheadline.weight(.semibold))
+
+                Spacer()
+
+                if let countText = progress.countText {
+                    Text(countText)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+
+                if let percentText = progress.percentText {
+                    Text(percentText)
+                        .font(.caption.monospacedDigit().weight(.semibold))
+                }
+            }
+
+            if let fractionCompleted = progress.fractionCompleted {
+                ProgressView(value: fractionCompleted)
+                    .progressViewStyle(.linear)
+            } else {
+                ProgressView()
+                    .progressViewStyle(.linear)
+            }
+
+            Text(progress.detail ?? model.statusMessage)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+        }
     }
 
     private var faceAnalysisPanel: some View {

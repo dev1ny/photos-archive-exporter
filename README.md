@@ -17,6 +17,7 @@ Photos Archive Exporter 是一个原生 macOS 工具，用于从 Apple「照片�
 - 保留真实重复资源：不同 Photos 资产即使文件内容相同，也会被保留为独立文件。
 - 生成 JSON / CSV 报告，用于审计、排错和增量备份。
 - 导出完成后在 App 内显示本次运行结果，包括失败、警告、重复资源和改名冲突。
+- 扫描、全量导出、增量备份和 Face Analysis 会显示进度条、已处理数量和百分比。
 - 可对本次已导出的图片运行本地 Face Analysis，统计检测到的人脸数量并生成 JSON / CSV 报告。
 - 带有 macOS App 图标。
 - 生成 macOS 通用版 App，支持 Apple silicon 和 Intel 芯片。
@@ -26,7 +27,7 @@ Photos Archive Exporter 是一个原生 macOS 工具，用于从 Apple「照片�
 请到 GitHub Releases 下载最新版：
 
 ```text
-PhotosArchiveExporter-v0.3.0-macos-universal.zip
+PhotosArchiveExporter-v0.3.1-macos-universal.zip
 ```
 
 解压后打开：
@@ -139,6 +140,7 @@ CSV 输出会处理逗号、引号、换行，并防止表格软件公式注入�
 - `archive-index.sqlite` 会存储为每个 Photos 资源一条最新有效记录，重复增量运行不会把大量 `skippedExisting` 记录无限追加进索引。
 - 旧版 `archive-index.json` 会自动迁移到 SQLite；迁移完成后，后续运行只按当前批次查询相关旧记录。
 - 扫描后的导出和增量规划按批处理，每批完成后立刻写回 SQLite，减少中途失败时丢失进度的风险。
+- 导出、增量备份和 Face Analysis 会按批推进进度条，长时间运行时可以看到当前处理数量和百分比。
 - 导出时用索引化的 `(assetLocalIdentifier, resourceIdentifier, destinationPath, sha256)` 查找旧记录，避免随着历史记录变多出现二次方级别的查找成本。
 - CSV 报告使用流式写出，不再把整份 CSV 先拼成一个超大字符串。
 - Face Analysis 会按 `imageLongEdgeLimit` 下采样后再交给 Vision，避免直接解码超大原图。
@@ -193,7 +195,7 @@ scripts/build_app.sh
 
 ```text
 dist/Photos Archive Exporter.app
-dist/PhotosArchiveExporter-v0.3.0-macos-universal.zip
+dist/PhotosArchiveExporter-v0.3.1-macos-universal.zip
 ```
 
 验证架构：
@@ -238,7 +240,7 @@ codesign --verify --deep --strict --verbose=2 "dist/Photos Archive Exporter.app"
 
 ## 版本
 
-当前版本：`v0.3.0`
+当前版本：`v0.3.1`
 
 ## 许可证
 

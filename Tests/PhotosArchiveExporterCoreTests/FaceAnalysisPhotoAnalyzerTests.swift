@@ -104,6 +104,56 @@ final class FaceAnalysisPhotoAnalyzerTests: XCTestCase {
         XCTAssertEqual(detector.requestedImageLongEdgeLimits, [900])
     }
 
+    func testReportsProgressForEligibleImageRecords() async throws {
+        let firstURL = try writeTemporaryFile(named: "IMG_0001.HEIC", contents: Data("one".utf8))
+        let secondURL = try writeTemporaryFile(named: "IMG_0002.HEIC", contents: Data("two".utf8))
+        let records = [
+            ExportRecord.photoAnalysisSample(
+                assetLocalIdentifier: "asset-1",
+                resourceIdentifier: "resource-1",
+                destinationPath: firstURL.path,
+                mediaType: .image,
+                status: .exported
+            ),
+            ExportRecord.photoAnalysisSample(
+                assetLocalIdentifier: "asset-video",
+                resourceIdentifier: "resource-video",
+                destinationPath: "/tmp/video.mov",
+                mediaType: .video,
+                status: .exported
+            ),
+            ExportRecord.photoAnalysisSample(
+                assetLocalIdentifier: "asset-2",
+                resourceIdentifier: "resource-2",
+                destinationPath: secondURL.path,
+                mediaType: .image,
+                status: .exported
+            )
+        ]
+        let detector = FakeStillImageFaceDetector(results: [
+            firstURL.path: .success(StillImageFaceDetectionResult(imageWidth: 100, imageHeight: 80, faces: [])),
+            secondURL.path: .success(StillImageFaceDetectionResult(imageWidth: 120, imageHeight: 90, faces: []))
+        ])
+        let analyzer = FaceAnalysisPhotoAnalyzer(detector: detector)
+        let progressRecorder = ProgressRecorder()
+
+        _ = await analyzer.analyze(
+            records: records,
+            runID: "run-1",
+            settings: .defaultLowResource,
+            analyzedAt: Date(timeIntervalSince1970: 20),
+            progressHandler: { completed, total in
+                await progressRecorder.record(completed: completed, total: total)
+            }
+        )
+
+        let events = await progressRecorder.events
+        XCTAssertEqual(events, [
+            ProgressEvent(completed: 1, total: 2),
+            ProgressEvent(completed: 2, total: 2)
+        ])
+    }
+
     func testRecordsFailedAnalysisWithoutStoppingRun() async throws {
         let failingURL = try writeTemporaryFile(named: "IMG_fail.HEIC", contents: Data("bad".utf8))
         let succeedingURL = try writeTemporaryFile(named: "IMG_ok.HEIC", contents: Data("ok".utf8))
@@ -217,6 +267,23 @@ final class FaceAnalysisPhotoAnalyzerTests: XCTestCase {
         let url = directory.appendingPathComponent(filename, isDirectory: false)
         try contents.write(to: url)
         return url
+    }
+}
+
+private struct ProgressEvent: Equatable {
+    let completed: Int
+    let total: Int
+}
+
+private actor ProgressRecorder {
+    private var recordedEvents: [ProgressEvent] = []
+
+    var events: [ProgressEvent] {
+        recordedEvents
+    }
+
+    func record(completed: Int, total: Int) {
+        recordedEvents.append(ProgressEvent(completed: completed, total: total))
     }
 }
 

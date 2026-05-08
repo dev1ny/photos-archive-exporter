@@ -81,12 +81,14 @@ public struct FaceAnalysisPhotoAnalyzer {
         records: [ExportRecord],
         runID: String,
         settings: FaceAnalysisSettings,
-        analyzedAt: Date = Date()
+        analyzedAt: Date = Date(),
+        progressHandler: ((Int, Int) async -> Void)? = nil
     ) async -> FaceAnalysisPhotoAnalyzerResult {
         var assetRecords: [FaceAnalysisAssetRecord] = []
         var faceObservations: [FaceObservationRecord] = []
+        let eligibleRecords = records.filter { shouldAnalyze($0) }
 
-        for record in records where shouldAnalyze(record) {
+        for (recordIndex, record) in eligibleRecords.enumerated() {
             let imageURL = URL(fileURLWithPath: record.destinationPath)
             do {
                 let detection = try await detectFaces(in: imageURL, settings: settings)
@@ -121,6 +123,7 @@ public struct FaceAnalysisPhotoAnalyzer {
                     )
                 )
             }
+            await progressHandler?(recordIndex + 1, eligibleRecords.count)
         }
 
         let summary = FaceAnalysisRunSummary(

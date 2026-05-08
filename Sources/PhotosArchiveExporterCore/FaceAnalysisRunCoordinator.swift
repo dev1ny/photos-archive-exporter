@@ -47,13 +47,15 @@ public struct FaceAnalysisRunCoordinator {
         destinationRoot: URL,
         runID: String,
         settings: FaceAnalysisSettings,
-        analyzedAt: Date = Date()
+        analyzedAt: Date = Date(),
+        progressHandler: ((Int, Int) async -> Void)? = nil
     ) async throws -> FaceAnalysisRunCoordinatorResult {
         let analyzerResult = await analyzer.analyze(
             records: records,
             runID: runID,
             settings: settings,
-            analyzedAt: analyzedAt
+            analyzedAt: analyzedAt,
+            progressHandler: progressHandler
         )
         let reportStore = FaceAnalysisReportStore(destinationRoot: destinationRoot)
         let previousIndex = try reportStore.loadIndex()

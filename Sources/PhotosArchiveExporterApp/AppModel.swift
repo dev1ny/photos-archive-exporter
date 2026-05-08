@@ -24,6 +24,7 @@ final class AppModel: ObservableObject {
     @Published var reportFiles: [ExportReportFile] = []
     @Published var lastFaceAnalysisSummary: FaceAnalysisRunSummary?
     @Published var faceAnalysisReportFiles: [FaceAnalysisReportFile] = []
+    @Published var progress: ArchiveProgress?
     @Published var statusMessage = "Choose a destination and authorize Photos access to begin."
     @Published var lastError: String?
 
@@ -31,6 +32,7 @@ final class AppModel: ObservableObject {
     private let resourceWriter: any ResourceWriting
     private let faceAnalysisCoordinator: FaceAnalysisRunCoordinator
     private static let exportBatchSize = 500
+    private static let progressUpdateInterval = 25
 
     init(
         libraryClient: PhotoKitLibraryClient? = nil,
@@ -104,6 +106,7 @@ final class AppModel: ObservableObject {
 
     func requestPhotosAccess() async {
         lastError = nil
+        clearProgress()
         let authorizationState = await libraryClient.requestAuthorization()
         if authorizationState.canRead {
             statusMessage = "Photos access authorized."
@@ -133,6 +136,7 @@ final class AppModel: ObservableObject {
 
         destinationRoot = url
         lastError = nil
+        clearProgress()
         clearFaceAnalysisReport()
         statusMessage = "Destination set to \(url.path)."
     }
@@ -148,17 +152,26 @@ final class AppModel: ObservableObject {
         setRecords([])
         clearRunReport()
         clearFaceAnalysisReport()
-        statusMessage = "Scanning the current Photos library..."
+        updateIndeterminateProgress(
+            title: "Scanning Library",
+            detail: "Scanning the current Photos library..."
+        )
 
         do {
             resources = try await libraryClient.scanResources()
             phase = .ready
-            statusMessage = "Found \(resources.count) exportable resources."
+            updateProgress(
+                title: "Scanning Library",
+                completed: resources.count,
+                total: resources.count,
+                detail: "Found \(resources.count.formatted()) exportable resources."
+            )
         } catch {
             resources = []
             setRecords([])
             clearRunReport()
             clearFaceAnalysisReport()
+            clearProgress()
             phase = .failed
             lastError = error.localizedDescription
             statusMessage = "Scan failed."
@@ -181,7 +194,12 @@ final class AppModel: ObservableObject {
         phase = .analyzingFaces
         lastError = nil
         clearFaceAnalysisReport()
-        statusMessage = "Analyzing \(faceAnalysisEligibleImageCount) exported photos..."
+        updateProgress(
+            title: "Face Analysis",
+            completed: 0,
+            total: faceAnalysisEligibleImageCount,
+            detail: "Analyzing \(faceAnalysisEligibleImageCount.formatted()) exported photos..."
+        )
 
         let startedAt = Date()
         let runID = Self.makeRunID(date: startedAt)
@@ -192,7 +210,17 @@ final class AppModel: ObservableObject {
                 destinationRoot: destinationRoot,
                 runID: runID,
                 settings: .defaultLowResource,
-                analyzedAt: startedAt
+                analyzedAt: startedAt,
+                progressHandler: { [weak self] completed, total in
+                    await MainActor.run {
+                        self?.updateProgress(
+                            title: "Face Analysis",
+                            completed: completed,
+                            total: total,
+                            detail: "Analyzed \(completed.formatted()) of \(total.formatted()) exported photos."
+                        )
+                    }
+                }
             )
 
             lastFaceAnalysisSummary = result.summary
@@ -205,9 +233,15 @@ final class AppModel: ObservableObject {
             ]
 
             phase = .finished
-            statusMessage = "Face analysis finished for run \(runID)."
+            updateProgress(
+                title: "Face Analysis",
+                completed: result.summary.totalAssetCount,
+                total: result.summary.totalAssetCount,
+                detail: "Face analysis finished for run \(runID)."
+            )
         } catch {
             clearFaceAnalysisReport()
+            clearProgress()
             phase = .failed
             lastError = error.localizedDescription
             statusMessage = "Face analysis failed."
@@ -267,6 +301,30 @@ final class AppModel: ObservableObject {
         faceAnalysisReportFiles = []
     }
 
+    private func clearProgress() {
+        progress = nil
+    }
+
+    private func updateProgress(
+        title: String,
+        completed: Int,
+        total: Int?,
+        detail: String
+    ) {
+        progress = ArchiveProgress(
+            title: title,
+            completedUnitCount: completed,
+            totalUnitCount: total,
+            detail: detail
+        )
+        statusMessage = detail
+    }
+
+    private func updateIndeterminateProgress(title: String, detail: String) {
+        progress = .indeterminate(title: title, detail: detail)
+        statusMessage = detail
+    }
+
     private func setRecords(_ records: [ExportRecord], duplicateGroups: [DuplicateGroup] = []) {
         self.records = records
         recordCounts = ExportRecordCounts(records: records, duplicateGroups: duplicateGroups)
@@ -282,7 +340,12 @@ final class AppModel: ObservableObject {
         setRecords([])
         clearRunReport()
         clearFaceAnalysisReport()
-        statusMessage = mode.startMessage(resourceCount: resources.count)
+        updateProgress(
+            title: mode.progressTitle,
+            completed: 0,
+            total: resources.count,
+            detail: mode.startMessage(resourceCount: resources.count)
+        )
 
         let startedAt = Date()
         let runID = Self.makeRunID(date: startedAt)
@@ -301,6 +364,12 @@ final class AppModel: ObservableObject {
             let duplicateGroups = try indexStore.loadDuplicateGroups()
             let currentRunDuplicateGroups = DuplicateReporter.strongDuplicateGroups(from: exportResult.records)
             setRecords(exportResult.records, duplicateGroups: currentRunDuplicateGroups)
+            updateProgress(
+                title: mode.progressTitle,
+                completed: exportResult.records.count,
+                total: resources.count,
+                detail: "Writing export reports..."
+            )
             let resourcesCSV = try indexStore.writeResourcesCSV(runID: runID, records: exportResult.records)
             let errorsCSV = try indexStore.writeErrorsCSV(runID: runID, records: exportResult.records)
             let duplicatesCSV = try indexStore.writeDuplicatesCSV(runID: runID, groups: duplicateGroups)
@@ -323,9 +392,15 @@ final class AppModel: ObservableObject {
             reportFiles = files
 
             phase = .finished
-            statusMessage = mode.finishedMessage(runID: runID)
+            updateProgress(
+                title: mode.progressTitle,
+                completed: exportResult.records.count,
+                total: resources.count,
+                detail: mode.finishedMessage(runID: runID)
+            )
         } catch {
             clearRunReport()
+            clearProgress()
             phase = .failed
             lastError = error.localizedDescription
             statusMessage = mode.failedMessage
@@ -370,18 +445,28 @@ final class AppModel: ObservableObject {
         startedAt: Date
     ) async throws -> [ExportRecord] {
         var currentRunRecords: [ExportRecord] = []
+        var completedCount = 0
 
         try await forEachResourceBatch { batch in
             let previousRecords = try indexStore.loadIndex(for: batch)
-            let batchRecords = await runner.export(
+            _ = try await runner.exportInBatches(
                 resources: batch,
                 destinationRoot: destinationRoot,
                 runID: runID,
                 exportRunDate: startedAt,
-                existingRecords: previousRecords
-            )
-            try indexStore.saveIndex(batchRecords)
-            currentRunRecords.append(contentsOf: batchRecords)
+                existingRecords: previousRecords,
+                batchSize: Self.progressUpdateInterval
+            ) { batchRecords in
+                try indexStore.saveIndex(batchRecords)
+                currentRunRecords.append(contentsOf: batchRecords)
+                completedCount += batchRecords.count
+                updateProgress(
+                    title: ExportMode.full.progressTitle,
+                    completed: completedCount,
+                    total: resources.count,
+                    detail: "Exported \(completedCount.formatted()) of \(resources.count.formatted()) resources."
+                )
+            }
         }
 
         return currentRunRecords
@@ -399,6 +484,7 @@ final class AppModel: ObservableObject {
         var planEntries: [IncrementalBackupPlanEntry] = []
         var skippedCount = 0
         var queuedCount = 0
+        var completedCount = 0
 
         try await forEachResourceBatch { batch in
             let previousRecords = try indexStore.loadIndex(for: batch)
@@ -411,15 +497,30 @@ final class AppModel: ObservableObject {
             )
             skippedCount += plan.skippedRecords.count
             queuedCount += plan.resourcesToExport.count
-            statusMessage = "Incremental backup verified \(skippedCount) existing resources and queued \(queuedCount) resources."
+            completedCount += plan.skippedRecords.count
+            updateProgress(
+                title: ExportMode.incremental.progressTitle,
+                completed: completedCount,
+                total: resources.count,
+                detail: "Incremental backup verified \(skippedCount.formatted()) existing resources and queued \(queuedCount.formatted()) resources."
+            )
 
-            let exportedRecords = await runner.export(
+            let exportedRecords = await runner.exportInBatches(
                 resources: plan.resourcesToExport,
                 destinationRoot: destinationRoot,
                 runID: runID,
                 exportRunDate: startedAt,
-                existingRecords: previousRecords + plan.skippedRecords
-            )
+                existingRecords: previousRecords + plan.skippedRecords,
+                batchSize: Self.progressUpdateInterval
+            ) { exportedBatch in
+                completedCount += exportedBatch.count
+                updateProgress(
+                    title: ExportMode.incremental.progressTitle,
+                    completed: completedCount,
+                    total: resources.count,
+                    detail: "Incremental backup processed \(completedCount.formatted()) of \(resources.count.formatted()) resources."
+                )
+            }
             let batchRecords = plan.currentRunRecords(exportedRecords: exportedRecords)
             try indexStore.saveIndex(batchRecords)
             currentRunRecords.append(contentsOf: batchRecords)
@@ -461,6 +562,15 @@ final class AppModel: ObservableObject {
 private enum ExportMode {
     case full
     case incremental
+
+    var progressTitle: String {
+        switch self {
+        case .full:
+            return "Full Export"
+        case .incremental:
+            return "Incremental Backup"
+        }
+    }
 
     func startMessage(resourceCount: Int) -> String {
         switch self {
@@ -540,7 +650,11 @@ private struct ExportRecordCounts {
                 break
             }
 
-            if record.mediaType == .image && record.status != .failed {
+            let effectiveMediaType = ResourceMediaTypeResolver.mediaType(
+                for: record.resourceType,
+                assetMediaType: record.mediaType
+            )
+            if effectiveMediaType == .image && record.status != .failed {
                 faceAnalysisEligibleImageCount += 1
             }
         }

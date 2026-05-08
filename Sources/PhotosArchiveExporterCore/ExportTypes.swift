@@ -30,6 +30,63 @@ public enum ResourceMediaTypeResolver {
     }
 }
 
+public struct ArchiveProgress: Equatable {
+    public let title: String
+    public let completedUnitCount: Int
+    public let totalUnitCount: Int?
+    public let detail: String?
+
+    public init(
+        title: String,
+        completedUnitCount: Int,
+        totalUnitCount: Int?,
+        detail: String? = nil
+    ) {
+        self.title = title
+        self.completedUnitCount = completedUnitCount
+        self.totalUnitCount = totalUnitCount
+        self.detail = detail
+    }
+
+    public static func indeterminate(title: String, detail: String? = nil) -> ArchiveProgress {
+        ArchiveProgress(
+            title: title,
+            completedUnitCount: 0,
+            totalUnitCount: nil,
+            detail: detail
+        )
+    }
+
+    public var isDeterminate: Bool {
+        guard let totalUnitCount else {
+            return false
+        }
+        return totalUnitCount > 0
+    }
+
+    public var fractionCompleted: Double? {
+        guard let totalUnitCount, totalUnitCount > 0 else {
+            return nil
+        }
+        let fraction = Double(completedUnitCount) / Double(totalUnitCount)
+        return min(1, max(0, fraction))
+    }
+
+    public var countText: String? {
+        guard let totalUnitCount else {
+            return nil
+        }
+        return "\(completedUnitCount.formatted()) / \(totalUnitCount.formatted())"
+    }
+
+    public var percentText: String? {
+        guard let fractionCompleted else {
+            return nil
+        }
+        return fractionCompleted.formatted(.percent.precision(.fractionLength(0)))
+    }
+}
+
 public enum CaptureDateSource: String, Codable, Equatable, CaseIterable {
     case exifOriginal
     case quickTimeCreation

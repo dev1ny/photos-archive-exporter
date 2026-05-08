@@ -30,6 +30,27 @@ final class ExportTypesTests: XCTestCase {
         XCTAssertEqual(ResourceMediaTypeResolver.mediaType(for: .fullSizePhoto, assetMediaType: .image), .image)
         XCTAssertEqual(ResourceMediaTypeResolver.mediaType(for: .alternatePhoto, assetMediaType: .image), .image)
     }
+
+    func testArchiveProgressClampsFractionAndFormatsCounts() {
+        let progress = ArchiveProgress(
+            title: "Exporting",
+            completedUnitCount: 12,
+            totalUnitCount: 10,
+            detail: "Writing files"
+        )
+
+        XCTAssertEqual(progress.fractionCompleted, 1)
+        XCTAssertEqual(progress.countText, "12 / 10")
+        XCTAssertTrue(progress.isDeterminate)
+    }
+
+    func testArchiveProgressCanBeIndeterminate() {
+        let progress = ArchiveProgress.indeterminate(title: "Scanning", detail: "Reading Photos library")
+
+        XCTAssertNil(progress.fractionCompleted)
+        XCTAssertNil(progress.countText)
+        XCTAssertFalse(progress.isDeterminate)
+    }
 }
 
 private extension ExportRecord {
