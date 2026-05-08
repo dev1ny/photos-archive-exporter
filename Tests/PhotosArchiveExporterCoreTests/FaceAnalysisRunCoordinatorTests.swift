@@ -58,7 +58,7 @@ final class FaceAnalysisRunCoordinatorTests: XCTestCase {
     }
 }
 
-private final class CoordinatorFakeFaceDetector: StillImageFaceDetecting {
+private final class CoordinatorFakeFaceDetector: StillImageFaceDetectingWithLimit {
     private let results: [String: StillImageFaceDetectionResult]
 
     init(results: [String: StillImageFaceDetectionResult]) {
@@ -66,6 +66,10 @@ private final class CoordinatorFakeFaceDetector: StillImageFaceDetecting {
     }
 
     func detectFaces(in imageURL: URL) async throws -> StillImageFaceDetectionResult {
+        try await detectFaces(in: imageURL, imageLongEdgeLimit: FaceAnalysisSettings.defaultLowResource.imageLongEdgeLimit)
+    }
+
+    func detectFaces(in imageURL: URL, imageLongEdgeLimit: Int) async throws -> StillImageFaceDetectionResult {
         guard let result = results[imageURL.path] else {
             throw CoordinatorFakeFaceDetectorError.unexpectedPath
         }

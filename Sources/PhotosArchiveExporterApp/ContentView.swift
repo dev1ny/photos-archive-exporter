@@ -73,8 +73,15 @@ struct ContentView: View {
                     Button("Start Full Export") {
                         Task { await model.startExport() }
                     }
-                    .buttonStyle(.borderedProminent)
                     .disabled(!model.canExport)
+
+                    Button {
+                        Task { await model.startIncrementalBackup() }
+                    } label: {
+                        Label("Incremental Backup", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!model.canIncrementalBackup)
                 }
             }
         }

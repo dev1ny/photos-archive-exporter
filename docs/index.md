@@ -7,7 +7,7 @@ Photos Archive Exporter 是一个原生 macOS 工具，用于从 Apple「照片�
 请在 GitHub Release 页面下载：
 
 ```text
-PhotosArchiveExporter-v0.2.0-macos-universal.zip
+PhotosArchiveExporter-v0.3.0-macos-universal.zip
 ```
 
 这个包是 macOS 通用版，支持：

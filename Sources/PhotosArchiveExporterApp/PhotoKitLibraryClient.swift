@@ -43,12 +43,13 @@ final class PhotoKitLibraryClient: ObservableObject {
                 let assetMediaType = Self.mapMediaType(asset.mediaType)
                 let assetResources = PHAssetResource.assetResources(for: asset)
                 for resource in assetResources where Self.shouldExport(resource) {
+                    let resourceType = Self.mapResourceType(resource.type)
                     resources.append(
                         AssetResourceDescriptor(
                             assetLocalIdentifier: asset.localIdentifier,
                             resourceIdentifier: "\(asset.localIdentifier)|\(resource.type.rawValue)|\(resource.originalFilename)",
-                            resourceType: Self.mapResourceType(resource.type),
-                            mediaType: assetMediaType,
+                            resourceType: resourceType,
+                            mediaType: ResourceMediaTypeResolver.mediaType(for: resourceType, assetMediaType: assetMediaType),
                             originalFilename: resource.originalFilename,
                             uniformTypeIdentifier: resource.uniformTypeIdentifier,
                             assetCreationDate: asset.creationDate

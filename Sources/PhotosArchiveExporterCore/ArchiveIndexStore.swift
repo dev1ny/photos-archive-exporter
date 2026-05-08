@@ -19,19 +19,30 @@ public struct ArchiveIndexStore {
         supportDirectory.appendingPathComponent("archive-index.json", isDirectory: false)
     }
 
-    public func loadIndex() throws -> [ExportRecord] {
-        guard FileManager.default.fileExists(atPath: indexURL.path) else {
-            return []
-        }
+    public var sqliteIndexURL: URL {
+        supportDirectory.appendingPathComponent("archive-index.sqlite", isDirectory: false)
+    }
 
-        let data = try Data(contentsOf: indexURL)
-        return try jsonDecoder.decode([ExportRecord].self, from: data)
+    public func loadIndex() throws -> [ExportRecord] {
+        let sqliteStore = SQLiteArchiveIndexStore(destinationRoot: destinationRoot)
+        try migrateLegacyJSONIfNeeded(to: sqliteStore)
+        return try sqliteStore.loadRecords()
+    }
+
+    public func loadIndex(for resources: [AssetResourceDescriptor]) throws -> [ExportRecord] {
+        let sqliteStore = SQLiteArchiveIndexStore(destinationRoot: destinationRoot)
+        try migrateLegacyJSONIfNeeded(to: sqliteStore)
+        return try sqliteStore.loadRecords(for: resources)
+    }
+
+    public func loadDuplicateGroups() throws -> [DuplicateGroup] {
+        let sqliteStore = SQLiteArchiveIndexStore(destinationRoot: destinationRoot)
+        try migrateLegacyJSONIfNeeded(to: sqliteStore)
+        return try sqliteStore.loadDuplicateGroups()
     }
 
     public func saveIndex(_ records: [ExportRecord]) throws {
-        try ensureSupportDirectory()
-        let data = try jsonEncoder.encode(records)
-        try data.write(to: indexURL, options: [.atomic])
+        try SQLiteArchiveIndexStore(destinationRoot: destinationRoot).upsertRecords(records)
     }
 
     public func writeResourcesCSV(runID: String, records: [ExportRecord]) throws -> URL {
@@ -39,8 +50,11 @@ public struct ArchiveIndexStore {
         let directory = runDirectory(validRunID: validRunID)
         try ensureRunDirectory(at: directory)
         let url = directory.appendingPathComponent("\(validRunID)-resources.csv", isDirectory: false)
-        let rows = [resourceHeader] + records.map(resourceRow)
-        try rows.joined(separator: "\n").appending("\n").write(to: url, atomically: true, encoding: .utf8)
+        try writeCSV(to: url, header: resourceHeader) { handle in
+            for record in records {
+                try writeLine(resourceRow(record), to: handle)
+            }
+        }
         return url
     }
 
@@ -50,8 +64,11 @@ public struct ArchiveIndexStore {
         try ensureRunDirectory(at: directory)
         let url = directory.appendingPathComponent("\(validRunID)-errors.csv", isDirectory: false)
         let failed = records.filter { $0.status == .failed }
-        let rows = [resourceHeader] + failed.map(resourceRow)
-        try rows.joined(separator: "\n").appending("\n").write(to: url, atomically: true, encoding: .utf8)
+        try writeCSV(to: url, header: resourceHeader) { handle in
+            for record in failed {
+                try writeLine(resourceRow(record), to: handle)
+            }
+        }
         return url
     }
 
@@ -61,12 +78,52 @@ public struct ArchiveIndexStore {
         try ensureRunDirectory(at: directory)
         let url = directory.appendingPathComponent("\(validRunID)-duplicates.csv", isDirectory: false)
         let header = csvRow(["sha256", "destinationPath", "originalFilename", "assetLocalIdentifier", "resourceIdentifier"])
-        let rows = groups.flatMap { group in
-            group.records.map { record in
-                csvRow([group.sha256, record.destinationPath, record.originalFilename, record.assetLocalIdentifier, record.resourceIdentifier])
+        try writeCSV(to: url, header: header) { handle in
+            for group in groups {
+                for record in group.records {
+                    try writeLine(csvRow([group.sha256, record.destinationPath, record.originalFilename, record.assetLocalIdentifier, record.resourceIdentifier]), to: handle)
+                }
             }
         }
-        try ([header] + rows).joined(separator: "\n").appending("\n").write(to: url, atomically: true, encoding: .utf8)
+        return url
+    }
+
+    public func writeIncrementalPlanCSV(runID: String, entries: [IncrementalBackupPlanEntry]) throws -> URL {
+        let validRunID = try validateRunID(runID)
+        let directory = runDirectory(validRunID: validRunID)
+        try ensureRunDirectory(at: directory)
+        let url = directory.appendingPathComponent("\(validRunID)-incremental-plan.csv", isDirectory: false)
+        let header = csvRow([
+            "assetLocalIdentifier",
+            "resourceIdentifier",
+            "resourceType",
+            "mediaType",
+            "originalFilename",
+            "action",
+            "previousDestinationPath",
+            "previousFileSize",
+            "previousSha256",
+            "note"
+        ])
+        try writeCSV(to: url, header: header) { handle in
+            for entry in entries {
+                try writeLine(
+                    csvRow([
+                        entry.resource.assetLocalIdentifier,
+                        entry.resource.resourceIdentifier,
+                        entry.resource.resourceType.rawValue,
+                        entry.resource.mediaType.rawValue,
+                        entry.resource.originalFilename,
+                        entry.action.rawValue,
+                        entry.previousRecord?.destinationPath ?? "",
+                        entry.previousRecord.map { String($0.fileSize) } ?? "",
+                        entry.previousRecord?.sha256 ?? "",
+                        entry.note
+                    ]),
+                    to: handle
+                )
+            }
+        }
         return url
     }
 
@@ -83,12 +140,59 @@ public struct ArchiveIndexStore {
         return decoder
     }
 
+    private func loadLegacyJSONIndex() throws -> [ExportRecord] {
+        guard FileManager.default.fileExists(atPath: indexURL.path) else {
+            return []
+        }
+
+        let data = try Data(contentsOf: indexURL)
+        return ArchiveIndexCompactor.compact(try jsonDecoder.decode([ExportRecord].self, from: data))
+    }
+
+    private func migrateLegacyJSONIfNeeded(to sqliteStore: SQLiteArchiveIndexStore) throws {
+        guard FileManager.default.fileExists(atPath: indexURL.path),
+              try !sqliteStore.isLegacyJSONMigrationComplete()
+        else {
+            return
+        }
+
+        let legacyRecords = try loadLegacyJSONIndex()
+        if !legacyRecords.isEmpty {
+            try sqliteStore.upsertRecords(legacyRecords)
+        }
+        try sqliteStore.markLegacyJSONMigrationComplete()
+    }
+
     private func ensureSupportDirectory() throws {
         try FileManager.default.createDirectory(at: supportDirectory, withIntermediateDirectories: true)
     }
 
     private func ensureRunDirectory(at directory: URL) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
+
+    private func writeCSV(to url: URL, header: String, rows: (FileHandle) throws -> Void) throws {
+        let temporaryURL = url.deletingLastPathComponent().appendingPathComponent(".\(url.lastPathComponent).\(UUID().uuidString).tmp", isDirectory: false)
+        try Data().write(to: temporaryURL, options: [.atomic])
+        let handle = try FileHandle(forWritingTo: temporaryURL)
+        do {
+            try writeLine(header, to: handle)
+            try rows(handle)
+            try handle.close()
+            if FileManager.default.fileExists(atPath: url.path) {
+                _ = try FileManager.default.replaceItemAt(url, withItemAt: temporaryURL)
+            } else {
+                try FileManager.default.moveItem(at: temporaryURL, to: url)
+            }
+        } catch {
+            try? handle.close()
+            try? FileManager.default.removeItem(at: temporaryURL)
+            throw error
+        }
+    }
+
+    private func writeLine(_ line: String, to handle: FileHandle) throws {
+        try handle.write(contentsOf: Data("\(line)\n".utf8))
     }
 
     private func runDirectory(validRunID: String) -> URL {

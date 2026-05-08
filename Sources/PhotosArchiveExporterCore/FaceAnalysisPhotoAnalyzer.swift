@@ -50,6 +50,10 @@ public protocol StillImageFaceDetecting {
     func detectFaces(in imageURL: URL) async throws -> StillImageFaceDetectionResult
 }
 
+public protocol StillImageFaceDetectingWithLimit: StillImageFaceDetecting {
+    func detectFaces(in imageURL: URL, imageLongEdgeLimit: Int) async throws -> StillImageFaceDetectionResult
+}
+
 public struct FaceAnalysisPhotoAnalyzerResult: Equatable {
     public let summary: FaceAnalysisRunSummary
     public let assetRecords: [FaceAnalysisAssetRecord]
@@ -85,7 +89,7 @@ public struct FaceAnalysisPhotoAnalyzer {
         for record in records where shouldAnalyze(record) {
             let imageURL = URL(fileURLWithPath: record.destinationPath)
             do {
-                let detection = try await detector.detectFaces(in: imageURL)
+                let detection = try await detectFaces(in: imageURL, settings: settings)
                 assetRecords.append(
                     makeAssetRecord(
                         from: record,
@@ -136,7 +140,16 @@ public struct FaceAnalysisPhotoAnalyzer {
     }
 
     private func shouldAnalyze(_ record: ExportRecord) -> Bool {
-        record.mediaType == .image && record.status != .failed
+        ResourceMediaTypeResolver.mediaType(for: record.resourceType, assetMediaType: record.mediaType) == .image
+            && record.status != .failed
+    }
+
+    private func detectFaces(in imageURL: URL, settings: FaceAnalysisSettings) async throws -> StillImageFaceDetectionResult {
+        if let limitedDetector = detector as? any StillImageFaceDetectingWithLimit {
+            return try await limitedDetector.detectFaces(in: imageURL, imageLongEdgeLimit: settings.imageLongEdgeLimit)
+        }
+
+        return try await detector.detectFaces(in: imageURL)
     }
 
     private func makeAssetRecord(
@@ -193,43 +206,60 @@ public struct FaceAnalysisPhotoAnalyzer {
     }
 }
 
-public struct VisionStillImageFaceDetector: StillImageFaceDetecting {
+public struct VisionStillImageFaceDetector: StillImageFaceDetectingWithLimit {
     public init() {}
 
     public func detectFaces(in imageURL: URL) async throws -> StillImageFaceDetectionResult {
+        try await detectFaces(in: imageURL, imageLongEdgeLimit: FaceAnalysisSettings.defaultLowResource.imageLongEdgeLimit)
+    }
+
+    public func detectFaces(in imageURL: URL, imageLongEdgeLimit: Int) async throws -> StillImageFaceDetectionResult {
         try await Task.detached(priority: .userInitiated) {
-            guard let source = CGImageSourceCreateWithURL(imageURL as CFURL, nil),
-                  let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
-            else {
-                throw FaceAnalysisImageDetectorError.unsupportedImage(imageURL)
-            }
+            try autoreleasepool {
+                guard let source = CGImageSourceCreateWithURL(imageURL as CFURL, nil) else {
+                    throw FaceAnalysisImageDetectorError.unsupportedImage(imageURL)
+                }
 
-            let request = VNDetectFaceLandmarksRequest()
-            let handler = VNImageRequestHandler(cgImage: image, options: [:])
-            try handler.perform([request])
+                let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+                let originalWidth = properties?[kCGImagePropertyPixelWidth] as? Int
+                let originalHeight = properties?[kCGImagePropertyPixelHeight] as? Int
+                let thumbnailOptions = [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceThumbnailMaxPixelSize: max(1, imageLongEdgeLimit)
+                ] as CFDictionary
 
-            let faces = (request.results ?? []).map { observation in
-                DetectedFace(
-                    boundingBox: NormalizedFaceBoundingBox(
-                        x: observation.boundingBox.origin.x,
-                        y: observation.boundingBox.origin.y,
-                        width: observation.boundingBox.width,
-                        height: observation.boundingBox.height
-                    ),
-                    confidence: Double(observation.confidence),
-                    quality: nil,
-                    roll: observation.roll?.doubleValue,
-                    yaw: observation.yaw?.doubleValue,
-                    pitch: observation.pitch?.doubleValue,
-                    landmarks: Self.landmarkRecords(from: observation.landmarks)
+                guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions) else {
+                    throw FaceAnalysisImageDetectorError.unsupportedImage(imageURL)
+                }
+
+                let request = VNDetectFaceLandmarksRequest()
+                let handler = VNImageRequestHandler(cgImage: image, options: [:])
+                try handler.perform([request])
+
+                let faces = (request.results ?? []).map { observation in
+                    DetectedFace(
+                        boundingBox: NormalizedFaceBoundingBox(
+                            x: observation.boundingBox.origin.x,
+                            y: observation.boundingBox.origin.y,
+                            width: observation.boundingBox.width,
+                            height: observation.boundingBox.height
+                        ),
+                        confidence: Double(observation.confidence),
+                        quality: nil,
+                        roll: observation.roll?.doubleValue,
+                        yaw: observation.yaw?.doubleValue,
+                        pitch: observation.pitch?.doubleValue,
+                        landmarks: Self.landmarkRecords(from: observation.landmarks)
+                    )
+                }
+
+                return StillImageFaceDetectionResult(
+                    imageWidth: originalWidth ?? image.width,
+                    imageHeight: originalHeight ?? image.height,
+                    faces: faces
                 )
             }
-
-            return StillImageFaceDetectionResult(
-                imageWidth: image.width,
-                imageHeight: image.height,
-                faces: faces
-            )
         }.value
     }
 

@@ -16,22 +16,57 @@ public struct ExportRunner {
     }
 
     public func export(resources: [AssetResourceDescriptor], destinationRoot: URL, runID: String, exportRunDate: Date, existingRecords: [ExportRecord] = []) async -> [ExportRecord] {
+        return await exportInBatches(
+            resources: resources,
+            destinationRoot: destinationRoot,
+            runID: runID,
+            exportRunDate: exportRunDate,
+            existingRecords: existingRecords,
+            batchSize: max(resources.count, 1),
+            didExportBatch: { _ in }
+        )
+    }
+
+    public func exportInBatches(
+        resources: [AssetResourceDescriptor],
+        destinationRoot: URL,
+        runID: String,
+        exportRunDate: Date,
+        existingRecords: [ExportRecord] = [],
+        batchSize: Int,
+        didExportBatch: ([ExportRecord]) throws -> Void
+    ) async rethrows -> [ExportRecord] {
         var records: [ExportRecord] = []
+        var batchRecords: [ExportRecord] = []
+        var knownRecordKeys = KnownExportRecordKeys(records: existingRecords)
+        let effectiveBatchSize = max(1, batchSize)
 
         for resource in resources {
-            records.append(await export(
+            let record = await export(
                 resource: resource,
                 destinationRoot: destinationRoot,
                 runID: runID,
                 exportRunDate: exportRunDate,
-                knownRecords: existingRecords + records
-            ))
+                knownRecordKeys: knownRecordKeys
+            )
+            records.append(record)
+            batchRecords.append(record)
+            knownRecordKeys.insert(record)
+
+            if batchRecords.count == effectiveBatchSize {
+                try didExportBatch(batchRecords)
+                batchRecords.removeAll(keepingCapacity: true)
+            }
+        }
+
+        if !batchRecords.isEmpty {
+            try didExportBatch(batchRecords)
         }
 
         return records
     }
 
-    private func export(resource: AssetResourceDescriptor, destinationRoot: URL, runID: String, exportRunDate: Date, knownRecords: [ExportRecord]) async -> ExportRecord {
+    private func export(resource: AssetResourceDescriptor, destinationRoot: URL, runID: String, exportRunDate: Date, knownRecordKeys: KnownExportRecordKeys) async -> ExportRecord {
         let temporaryURL = temporaryDirectory(root: destinationRoot).appendingPathComponent(UUID().uuidString, isDirectory: false)
         var fallbackDecision = fallbackCaptureDateDecision(for: resource, exportRunDate: exportRunDate)
         var fallbackDestination = pathPlanner.preferredDestination(root: destinationRoot, captureDate: fallbackDecision.date, originalFilename: resource.originalFilename)
@@ -57,7 +92,7 @@ public struct ExportRunner {
                 preferred: fallbackDestination,
                 temporaryHash: temporaryHash,
                 resource: resource,
-                knownRecords: knownRecords
+                knownRecordKeys: knownRecordKeys
             )
             if exportDestination.isExistingMatch {
                 try? fileManager.removeItem(at: temporaryURL)
@@ -119,7 +154,7 @@ public struct ExportRunner {
         try fileManager.moveItem(at: temporaryURL, to: destination)
     }
 
-    private func resolveExportDestination(preferred: URL, temporaryHash: String, resource: AssetResourceDescriptor, knownRecords: [ExportRecord]) throws -> (url: URL, isExistingMatch: Bool) {
+    private func resolveExportDestination(preferred: URL, temporaryHash: String, resource: AssetResourceDescriptor, knownRecordKeys: KnownExportRecordKeys) throws -> (url: URL, isExistingMatch: Bool) {
         var existingCandidates: Set<String> = []
         var candidate = preferred
 
@@ -130,7 +165,7 @@ public struct ExportRunner {
 
             let existingHash = try FileHasher.sha256Hex(for: candidate)
             if existingHash == temporaryHash {
-                if hasKnownMatchingRecord(for: resource, destination: candidate, sha256: temporaryHash, in: knownRecords) {
+                if knownRecordKeys.contains(resource: resource, destination: candidate, sha256: temporaryHash) {
                     return (candidate, true)
                 }
             }
@@ -139,16 +174,6 @@ public struct ExportRunner {
             candidate = PathPlanner.resolveConflict(for: preferred) { candidate in
                 candidate == preferred || existingCandidates.contains(candidate.path)
             }
-        }
-    }
-
-    private func hasKnownMatchingRecord(for resource: AssetResourceDescriptor, destination: URL, sha256: String, in knownRecords: [ExportRecord]) -> Bool {
-        knownRecords.contains { record in
-            record.assetLocalIdentifier == resource.assetLocalIdentifier
-                && record.resourceIdentifier == resource.resourceIdentifier
-                && record.destinationPath == destination.path
-                && record.sha256 == sha256
-                && record.status != .failed
         }
     }
 
@@ -184,4 +209,46 @@ public struct ExportRunner {
             errorMessage: errorMessage
         )
     }
+}
+
+private struct KnownExportRecordKeys {
+    private var keys: Set<KnownExportRecordKey> = []
+
+    init(records: [ExportRecord]) {
+        for record in records {
+            insert(record)
+        }
+    }
+
+    mutating func insert(_ record: ExportRecord) {
+        guard record.status != .failed,
+              let sha256 = record.sha256,
+              !sha256.isEmpty
+        else {
+            return
+        }
+
+        keys.insert(KnownExportRecordKey(
+            assetLocalIdentifier: record.assetLocalIdentifier,
+            resourceIdentifier: record.resourceIdentifier,
+            destinationPath: record.destinationPath,
+            sha256: sha256
+        ))
+    }
+
+    func contains(resource: AssetResourceDescriptor, destination: URL, sha256: String) -> Bool {
+        keys.contains(KnownExportRecordKey(
+            assetLocalIdentifier: resource.assetLocalIdentifier,
+            resourceIdentifier: resource.resourceIdentifier,
+            destinationPath: destination.path,
+            sha256: sha256
+        ))
+    }
+}
+
+private struct KnownExportRecordKey: Hashable {
+    let assetLocalIdentifier: String
+    let resourceIdentifier: String
+    let destinationPath: String
+    let sha256: String
 }

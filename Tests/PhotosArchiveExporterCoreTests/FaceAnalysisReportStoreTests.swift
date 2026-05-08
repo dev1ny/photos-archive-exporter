@@ -121,6 +121,30 @@ final class FaceAnalysisReportStoreTests: XCTestCase {
         XCTAssertFalse(errorsCSV.contains("asset-1"))
     }
 
+    func testFaceAnalysisIndexKeepsLatestRecordPerResource() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let store = FaceAnalysisReportStore(destinationRoot: directory)
+        let firstRun = FaceAnalysisAssetRecord.analysisSample(
+            runID: "run-1",
+            assetLocalIdentifier: "asset-1",
+            mediaType: .image,
+            status: .analyzed,
+            facesDetected: 1
+        )
+        let secondRun = FaceAnalysisAssetRecord.analysisSample(
+            runID: "run-2",
+            assetLocalIdentifier: "asset-1",
+            mediaType: .image,
+            status: .analyzed,
+            facesDetected: 2
+        )
+
+        try store.saveIndex([firstRun, secondRun])
+
+        let loaded = try store.loadIndex()
+        XCTAssertEqual(loaded, [secondRun])
+    }
+
     func testFaceAnalysisCSVNeutralizesSpreadsheetFormulas() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let store = FaceAnalysisReportStore(destinationRoot: directory)
@@ -178,6 +202,7 @@ final class FaceAnalysisReportStoreTests: XCTestCase {
 
 private extension FaceAnalysisAssetRecord {
     static func analysisSample(
+        runID: String = "run-1",
         assetLocalIdentifier: String,
         mediaType: MediaType,
         originalFilename: String = "IMG_0001.HEIC",
@@ -186,7 +211,7 @@ private extension FaceAnalysisAssetRecord {
         errorMessage: String? = nil
     ) -> FaceAnalysisAssetRecord {
         FaceAnalysisAssetRecord(
-            runID: "run-1",
+            runID: runID,
             assetLocalIdentifier: assetLocalIdentifier,
             resourceIdentifier: "\(assetLocalIdentifier)-resource",
             mediaType: mediaType,

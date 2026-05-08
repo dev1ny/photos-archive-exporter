@@ -17,6 +17,19 @@ public enum MediaType: String, Codable, Equatable, CaseIterable {
     case other
 }
 
+public enum ResourceMediaTypeResolver {
+    public static func mediaType(for resourceType: ResourceType, assetMediaType: MediaType) -> MediaType {
+        switch resourceType {
+        case .video, .pairedVideo, .fullSizeVideo, .fullSizePairedVideo:
+            return .video
+        case .photo, .fullSizePhoto, .alternatePhoto:
+            return .image
+        case .other:
+            return assetMediaType
+        }
+    }
+}
+
 public enum CaptureDateSource: String, Codable, Equatable, CaseIterable {
     case exifOriginal
     case quickTimeCreation

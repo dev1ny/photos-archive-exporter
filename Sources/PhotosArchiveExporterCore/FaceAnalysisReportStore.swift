@@ -25,12 +25,12 @@ public struct FaceAnalysisReportStore {
         }
 
         let data = try Data(contentsOf: indexURL)
-        return try jsonDecoder.decode([FaceAnalysisAssetRecord].self, from: data)
+        return compactIndex(try jsonDecoder.decode([FaceAnalysisAssetRecord].self, from: data))
     }
 
     public func saveIndex(_ records: [FaceAnalysisAssetRecord]) throws {
         try ensureSupportDirectory()
-        let data = try jsonEncoder.encode(records)
+        let data = try jsonEncoder.encode(compactIndex(records))
         try data.write(to: indexURL, options: [.atomic])
     }
 
@@ -49,8 +49,11 @@ public struct FaceAnalysisReportStore {
         let directory = runDirectory(validRunID: validRunID)
         try ensureRunDirectory(at: directory)
         let url = directory.appendingPathComponent("\(validRunID)-assets.csv", isDirectory: false)
-        let rows = [assetHeader] + records.map(assetRow)
-        try rows.joined(separator: "\n").appending("\n").write(to: url, atomically: true, encoding: .utf8)
+        try writeCSV(to: url, header: assetHeader) { handle in
+            for record in records {
+                try writeLine(assetRow(record), to: handle)
+            }
+        }
         return url
     }
 
@@ -59,8 +62,11 @@ public struct FaceAnalysisReportStore {
         let directory = runDirectory(validRunID: validRunID)
         try ensureRunDirectory(at: directory)
         let url = directory.appendingPathComponent("\(validRunID)-faces.csv", isDirectory: false)
-        let rows = [faceHeader] + faces.map(faceRow)
-        try rows.joined(separator: "\n").appending("\n").write(to: url, atomically: true, encoding: .utf8)
+        try writeCSV(to: url, header: faceHeader) { handle in
+            for face in faces {
+                try writeLine(faceRow(face), to: handle)
+            }
+        }
         return url
     }
 
@@ -70,8 +76,11 @@ public struct FaceAnalysisReportStore {
         try ensureRunDirectory(at: directory)
         let url = directory.appendingPathComponent("\(validRunID)-errors.csv", isDirectory: false)
         let failed = records.filter { $0.status == .failed }
-        let rows = [assetHeader] + failed.map(assetRow)
-        try rows.joined(separator: "\n").appending("\n").write(to: url, atomically: true, encoding: .utf8)
+        try writeCSV(to: url, header: assetHeader) { handle in
+            for record in failed {
+                try writeLine(assetRow(record), to: handle)
+            }
+        }
         return url
     }
 
@@ -94,6 +103,45 @@ public struct FaceAnalysisReportStore {
 
     private func ensureRunDirectory(at directory: URL) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
+
+    private func writeCSV(to url: URL, header: String, rows: (FileHandle) throws -> Void) throws {
+        let temporaryURL = url.deletingLastPathComponent().appendingPathComponent(".\(url.lastPathComponent).\(UUID().uuidString).tmp", isDirectory: false)
+        try Data().write(to: temporaryURL, options: [.atomic])
+        let handle = try FileHandle(forWritingTo: temporaryURL)
+        do {
+            try writeLine(header, to: handle)
+            try rows(handle)
+            try handle.close()
+            if FileManager.default.fileExists(atPath: url.path) {
+                _ = try FileManager.default.replaceItemAt(url, withItemAt: temporaryURL)
+            } else {
+                try FileManager.default.moveItem(at: temporaryURL, to: url)
+            }
+        } catch {
+            try? handle.close()
+            try? FileManager.default.removeItem(at: temporaryURL)
+            throw error
+        }
+    }
+
+    private func writeLine(_ line: String, to handle: FileHandle) throws {
+        try handle.write(contentsOf: Data("\(line)\n".utf8))
+    }
+
+    private func compactIndex(_ records: [FaceAnalysisAssetRecord]) -> [FaceAnalysisAssetRecord] {
+        var resourceOrder: [FaceAnalysisRecordKey] = []
+        var recordByResource: [FaceAnalysisRecordKey: FaceAnalysisAssetRecord] = [:]
+
+        for record in records {
+            let key = FaceAnalysisRecordKey(record: record)
+            if recordByResource[key] == nil {
+                resourceOrder.append(key)
+            }
+            recordByResource[key] = record
+        }
+
+        return resourceOrder.compactMap { recordByResource[$0] }
     }
 
     private func runDirectory(validRunID: String) -> URL {
@@ -231,5 +279,15 @@ public struct FaceAnalysisReportStore {
         }
 
         return "'\(value)"
+    }
+}
+
+private struct FaceAnalysisRecordKey: Hashable {
+    let assetLocalIdentifier: String
+    let resourceIdentifier: String
+
+    init(record: FaceAnalysisAssetRecord) {
+        assetLocalIdentifier = record.assetLocalIdentifier
+        resourceIdentifier = record.resourceIdentifier
     }
 }

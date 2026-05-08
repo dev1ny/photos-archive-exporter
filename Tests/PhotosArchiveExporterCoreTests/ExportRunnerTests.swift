@@ -155,6 +155,102 @@ final class ExportRunnerTests: XCTestCase {
         XCTAssertEqual(records[0].destinationPath, conflict.path)
         XCTAssertTrue(FileManager.default.fileExists(atPath: conflict.path))
     }
+
+    func testLargeKnownRecordsPreserveExactIdentityDestinationHashMatching() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let planner = PathPlanner(calendar: Calendar(identifier: .gregorian), timeZone: TimeZone(secondsFromGMT: 0)!)
+        let preferred = planner.preferredDestination(root: directory, captureDate: Date(timeIntervalSince1970: 0), originalFilename: "IMG_0001.HEIC")
+        let conflict = PathPlanner.resolveConflict(for: preferred) { candidate in
+            candidate == preferred
+        }
+        try FileManager.default.createDirectory(at: preferred.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("hello".utf8).write(to: preferred)
+        let resource = AssetResourceDescriptor(
+            assetLocalIdentifier: "asset-target",
+            resourceIdentifier: "resource-target",
+            resourceType: .photo,
+            mediaType: .image,
+            originalFilename: "IMG_0001.HEIC",
+            uniformTypeIdentifier: "public.heic",
+            assetCreationDate: Date(timeIntervalSince1970: 0)
+        )
+        let matchingHash = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        var existingRecords: [ExportRecord] = (0..<2_000).flatMap { index in
+            [
+                ExportRecord.runnerSample(
+                    assetLocalIdentifier: "noise-asset-\(index)",
+                    resourceIdentifier: "noise-resource-\(index)",
+                    destinationPath: preferred.path,
+                    sha256: matchingHash
+                ),
+                ExportRecord.runnerSample(
+                    assetLocalIdentifier: "asset-target",
+                    resourceIdentifier: "resource-target",
+                    destinationPath: "/archive/other-\(index).HEIC",
+                    sha256: matchingHash
+                ),
+                ExportRecord.runnerSample(
+                    assetLocalIdentifier: "asset-target",
+                    resourceIdentifier: "resource-target",
+                    destinationPath: preferred.path,
+                    sha256: "different-\(index)"
+                )
+            ]
+        }
+        existingRecords.append(
+            ExportRecord.runnerSample(
+                assetLocalIdentifier: "asset-target",
+                resourceIdentifier: "resource-target",
+                destinationPath: preferred.path,
+                sha256: matchingHash
+            )
+        )
+        let runner = ExportRunner(resourceWriter: FakeResourceWriter(data: Data("hello".utf8)), pathPlanner: planner)
+
+        let records = await runner.export(
+            resources: [resource],
+            destinationRoot: directory,
+            runID: "run-1",
+            exportRunDate: Date(timeIntervalSince1970: 10),
+            existingRecords: existingRecords
+        )
+
+        XCTAssertEqual(records[0].status, .skippedExisting)
+        XCTAssertEqual(records[0].destinationPath, preferred.path)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: conflict.path))
+    }
+
+    func testExportsInBatchesAndCallsCompletionForEachBatch() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let resources = (0..<5).map { index in
+            AssetResourceDescriptor(
+                assetLocalIdentifier: "asset-\(index)",
+                resourceIdentifier: "resource-\(index)",
+                resourceType: .photo,
+                mediaType: .image,
+                originalFilename: "IMG_\(index).HEIC",
+                uniformTypeIdentifier: "public.heic",
+                assetCreationDate: Date(timeIntervalSince1970: TimeInterval(index))
+            )
+        }
+        let runner = ExportRunner(resourceWriter: PerResourceFakeWriter())
+        var batchSizes: [Int] = []
+
+        let records = await runner.exportInBatches(
+            resources: resources,
+            destinationRoot: directory,
+            runID: "run-1",
+            exportRunDate: Date(timeIntervalSince1970: 10),
+            existingRecords: [],
+            batchSize: 2
+        ) { batch in
+            batchSizes.append(batch.count)
+        }
+
+        XCTAssertEqual(records.count, 5)
+        XCTAssertEqual(batchSizes, [2, 2, 1])
+        XCTAssertEqual(records.map(\.status), Array(repeating: .exported, count: 5))
+    }
 }
 
 private struct FakeResourceWriter: ResourceWriting {
@@ -166,6 +262,12 @@ private struct FakeResourceWriter: ResourceWriting {
             throw CocoaError(.fileWriteUnknown)
         }
         try data.write(to: temporaryURL)
+    }
+}
+
+private struct PerResourceFakeWriter: ResourceWriting {
+    func write(resource: AssetResourceDescriptor, to temporaryURL: URL) async throws {
+        try Data(resource.resourceIdentifier.utf8).write(to: temporaryURL)
     }
 }
 

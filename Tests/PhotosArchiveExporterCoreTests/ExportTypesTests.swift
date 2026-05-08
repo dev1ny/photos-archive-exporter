@@ -17,6 +17,19 @@ final class ExportTypesTests: XCTestCase {
         XCTAssertEqual(summary.failedCount, 1)
         XCTAssertEqual(summary.renamedConflictCount, 1)
     }
+
+    func testResourceMediaTypeResolverTreatsLivePhotoPairedVideoAsVideo() {
+        XCTAssertEqual(ResourceMediaTypeResolver.mediaType(for: .pairedVideo, assetMediaType: .image), .video)
+        XCTAssertEqual(ResourceMediaTypeResolver.mediaType(for: .fullSizePairedVideo, assetMediaType: .image), .video)
+        XCTAssertEqual(ResourceMediaTypeResolver.mediaType(for: .video, assetMediaType: .image), .video)
+        XCTAssertEqual(ResourceMediaTypeResolver.mediaType(for: .fullSizeVideo, assetMediaType: .image), .video)
+    }
+
+    func testResourceMediaTypeResolverPreservesPhotoResourcesAsImage() {
+        XCTAssertEqual(ResourceMediaTypeResolver.mediaType(for: .photo, assetMediaType: .image), .image)
+        XCTAssertEqual(ResourceMediaTypeResolver.mediaType(for: .fullSizePhoto, assetMediaType: .image), .image)
+        XCTAssertEqual(ResourceMediaTypeResolver.mediaType(for: .alternatePhoto, assetMediaType: .image), .image)
+    }
 }
 
 private extension ExportRecord {

@@ -32,7 +32,7 @@ struct ExportResultsView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Export Results")
                     .font(.title3.weight(.semibold))
-                Text("Run \(report.runID). These details match the JSON index and CSV reports written for this export.")
+                Text("Run \(report.runID). These details match the SQLite index and CSV reports written for this export.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
@@ -64,11 +64,11 @@ struct ExportResultsView: View {
         Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 14) {
             GridRow {
                 resultMetric("Current Run", value: report.totalCount)
-                resultMetric("Failed", value: report.failedRecords.count)
-                resultMetric("Warnings", value: report.warningRecords.count)
+                resultMetric("Exported", value: report.exportedRecords.count)
+                resultMetric("Skipped", value: report.skippedExistingRecords.count)
             }
             GridRow {
-                resultMetric("Skipped", value: report.skippedExistingRecords.count)
+                resultMetric("Failed", value: report.failedRecords.count)
                 resultMetric("Renamed", value: report.renamedConflictRecords.count)
                 resultMetric("Duplicates", value: report.duplicateResourceCount)
             }

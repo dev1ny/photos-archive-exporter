@@ -57,6 +57,7 @@ final class FaceAnalysisPhotoAnalyzerTests: XCTestCase {
         )
 
         XCTAssertEqual(detector.requestedPaths, [imageURL.path])
+        XCTAssertEqual(detector.requestedImageLongEdgeLimits, [FaceAnalysisSettings.defaultLowResource.imageLongEdgeLimit])
         XCTAssertEqual(result.assetRecords.count, 1)
         XCTAssertEqual(result.assetRecords[0].status, .analyzed)
         XCTAssertEqual(result.assetRecords[0].facesDetected, 2)
@@ -69,6 +70,38 @@ final class FaceAnalysisPhotoAnalyzerTests: XCTestCase {
         XCTAssertEqual(result.faceObservations[0].faceObservationID, "run-1|asset-1|resource-1|0")
         XCTAssertEqual(result.faceObservations[0].landmarks.map(\.regionName), ["leftEye"])
         XCTAssertEqual(result.summary.facesDetectedCount, 2)
+    }
+
+    func testPassesConfiguredImageLongEdgeLimitToDetector() async throws {
+        let imageURL = try writeTemporaryFile(named: "IMG_0001.HEIC", contents: Data("image-data".utf8))
+        let record = ExportRecord.photoAnalysisSample(
+            assetLocalIdentifier: "asset-1",
+            resourceIdentifier: "resource-1",
+            destinationPath: imageURL.path,
+            mediaType: .image,
+            status: .exported
+        )
+        let detector = FakeStillImageFaceDetector(results: [
+            imageURL.path: .success(StillImageFaceDetectionResult(imageWidth: 900, imageHeight: 600, faces: []))
+        ])
+        let analyzer = FaceAnalysisPhotoAnalyzer(detector: detector)
+        let settings = FaceAnalysisSettings(
+            includeVideos: false,
+            resourceProfile: .lowResource,
+            imageLongEdgeLimit: 900,
+            videoFrameIntervalSeconds: 5,
+            maxFramesPerVideo: 50,
+            settingsVersion: 1
+        )
+
+        _ = await analyzer.analyze(
+            records: [record],
+            runID: "run-1",
+            settings: settings,
+            analyzedAt: Date(timeIntervalSince1970: 20)
+        )
+
+        XCTAssertEqual(detector.requestedImageLongEdgeLimits, [900])
     }
 
     func testRecordsFailedAnalysisWithoutStoppingRun() async throws {
@@ -140,12 +173,36 @@ final class FaceAnalysisPhotoAnalyzerTests: XCTestCase {
         XCTAssertEqual(result.summary.totalAssetCount, 0)
     }
 
+    func testSkipsLivePhotoPairedVideoEvenWhenLegacyRecordSaysImage() async throws {
+        let pairedVideoRecord = ExportRecord.photoAnalysisSample(
+            assetLocalIdentifier: "asset-live",
+            resourceIdentifier: "resource-paired-video",
+            destinationPath: "/tmp/live.mov",
+            resourceType: .pairedVideo,
+            mediaType: .image,
+            status: .exported
+        )
+        let detector = FakeStillImageFaceDetector(results: [:])
+        let analyzer = FaceAnalysisPhotoAnalyzer(detector: detector)
+
+        let result = await analyzer.analyze(
+            records: [pairedVideoRecord],
+            runID: "run-1",
+            settings: .defaultLowResource,
+            analyzedAt: Date(timeIntervalSince1970: 20)
+        )
+
+        XCTAssertTrue(detector.requestedPaths.isEmpty)
+        XCTAssertTrue(result.assetRecords.isEmpty)
+        XCTAssertEqual(result.summary.totalAssetCount, 0)
+    }
+
     func testVisionDetectorThrowsForUnsupportedImageFile() async throws {
         let url = try writeTemporaryFile(named: "not-image.txt", contents: Data("not an image".utf8))
         let detector = VisionStillImageFaceDetector()
 
         do {
-            _ = try await detector.detectFaces(in: url)
+            _ = try await detector.detectFaces(in: url, imageLongEdgeLimit: 1600)
             XCTFail("Expected unsupported image to throw.")
         } catch FaceAnalysisImageDetectorError.unsupportedImage(let thrownURL) {
             XCTAssertEqual(thrownURL.path, url.path)
@@ -163,16 +220,22 @@ final class FaceAnalysisPhotoAnalyzerTests: XCTestCase {
     }
 }
 
-private final class FakeStillImageFaceDetector: StillImageFaceDetecting {
+private final class FakeStillImageFaceDetector: StillImageFaceDetectingWithLimit {
     private let results: [String: Result<StillImageFaceDetectionResult, Error>]
     private(set) var requestedPaths: [String] = []
+    private(set) var requestedImageLongEdgeLimits: [Int] = []
 
     init(results: [String: Result<StillImageFaceDetectionResult, Error>]) {
         self.results = results
     }
 
     func detectFaces(in imageURL: URL) async throws -> StillImageFaceDetectionResult {
+        try await detectFaces(in: imageURL, imageLongEdgeLimit: FaceAnalysisSettings.defaultLowResource.imageLongEdgeLimit)
+    }
+
+    func detectFaces(in imageURL: URL, imageLongEdgeLimit: Int) async throws -> StillImageFaceDetectionResult {
         requestedPaths.append(imageURL.path)
+        requestedImageLongEdgeLimits.append(imageLongEdgeLimit)
         guard let result = results[imageURL.path] else {
             throw FakeDetectorError.unexpectedPath
         }
@@ -199,6 +262,7 @@ private extension ExportRecord {
         assetLocalIdentifier: String,
         resourceIdentifier: String,
         destinationPath: String,
+        resourceType: ResourceType? = nil,
         mediaType: MediaType,
         status: ExportStatus,
         fileSize: Int64 = 12,
@@ -208,7 +272,7 @@ private extension ExportRecord {
             runID: "export-run-1",
             assetLocalIdentifier: assetLocalIdentifier,
             resourceIdentifier: resourceIdentifier,
-            resourceType: mediaType == .video ? .video : .photo,
+            resourceType: resourceType ?? (mediaType == .video ? .video : .photo),
             mediaType: mediaType,
             originalFilename: URL(fileURLWithPath: destinationPath).lastPathComponent,
             destinationPath: destinationPath,
