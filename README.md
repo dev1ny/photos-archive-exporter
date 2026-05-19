@@ -27,7 +27,7 @@ Photos Archive Exporter 是一个原生 macOS 工具，用于从 Apple「照片�
 请到 GitHub Releases 下载最新版：
 
 ```text
-PhotosArchiveExporter-v0.3.2-macos-universal.zip
+PhotosArchiveExporter-v0.3.3-macos-universal.zip
 ```
 
 解压后打开：
@@ -197,7 +197,7 @@ scripts/build_app.sh
 
 ```text
 dist/Photos Archive Exporter.app
-dist/PhotosArchiveExporter-v0.3.2-macos-universal.zip
+dist/PhotosArchiveExporter-v0.3.3-macos-universal.zip
 ```
 
 验证架构：
@@ -242,8 +242,8 @@ codesign --verify --deep --strict --verbose=2 "dist/Photos Archive Exporter.app"
 
 ## 版本
 
-当前版本：`v0.3.2`
+当前版本：`v0.3.3`
 
 ## 许可证
 
-尚未选择开源许可证。在添加 LICENSE 文件前，默认保留所有权利。
+本项目以 MIT 许可证开源，详见仓库根目录的 [LICENSE](LICENSE) 文件。

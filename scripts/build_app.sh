@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="Photos Archive Exporter"
 BINARY_NAME="PhotosArchiveExporterApp"
-VERSION="0.3.2"
+VERSION="0.3.3"
 DIST_DIR="$ROOT_DIR/dist"
 APP_DIR="$DIST_DIR/$APP_NAME.app"
 ZIP_PATH="$DIST_DIR/PhotosArchiveExporter-v$VERSION-macos-universal.zip"
@@ -54,11 +54,17 @@ cat > "$CONTENTS_DIR/Info.plist" <<'PLIST'
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.3.2</string>
+    <string>0.3.3</string>
     <key>CFBundleVersion</key>
-    <string>6</string>
+    <string>7</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.photography</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSHumanReadableCopyright</key>
+    <string>Copyright © 2025 dev1ny. Released under the MIT License.</string>
     <key>NSPhotoLibraryUsageDescription</key>
     <string>Photos Archive Exporter needs read access to export original photos and videos into your chosen archive folder.</string>
 </dict>
