@@ -161,6 +161,40 @@ public struct ExportRunner {
             .appendingPathComponent("tmp", isDirectory: true)
     }
 
+    /// Remove every file left over inside `<root>/_photos_archive_exporter/tmp/`.
+    ///
+    /// `ExportRunner` writes each resource to a unique `tmp/<UUID>` path first
+    /// and then atomically moves it into place. If the app crashes (or the
+    /// machine reboots) mid-export, those `tmp/<UUID>` files become orphans —
+    /// they're never claimed by a successful record and never referenced again,
+    /// but they still consume disk space. Call this once at the start of every
+    /// export to garbage-collect them.
+    ///
+    /// Returns the number of files removed (useful for status messages /
+    /// telemetry); failures are swallowed so a transient FS hiccup never
+    /// blocks the export itself.
+    @discardableResult
+    public func purgeOrphanedTemporaryFiles(at destinationRoot: URL) -> Int {
+        let tmpDirectory = temporaryDirectory(root: destinationRoot)
+        guard fileManager.fileExists(atPath: tmpDirectory.path) else { return 0 }
+
+        guard let contents = try? fileManager.contentsOfDirectory(
+            at: tmpDirectory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else {
+            return 0
+        }
+
+        var removed = 0
+        for url in contents {
+            if (try? fileManager.removeItem(at: url)) != nil {
+                removed += 1
+            }
+        }
+        return removed
+    }
+
     private func fallbackCaptureDateDecision(for resource: AssetResourceDescriptor, exportRunDate: Date) -> CaptureDateDecision {
         CaptureDateResolver.resolve(
             exifOriginal: nil,

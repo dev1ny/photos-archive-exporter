@@ -352,6 +352,18 @@ final class AppModel: ObservableObject {
         let runner = ExportRunner(resourceWriter: resourceWriter)
         let indexStore = ArchiveIndexStore(destinationRoot: destinationRoot)
 
+        // GC orphaned tmp/<UUID> files from any previously crashed / cancelled
+        // run before we start writing new ones. Best-effort — never blocks.
+        let purged = runner.purgeOrphanedTemporaryFiles(at: destinationRoot)
+        if purged > 0 {
+            updateProgress(
+                title: mode.progressTitle,
+                completed: 0,
+                total: resources.count,
+                detail: "Cleaned up \(purged) leftover temporary file\(purged == 1 ? "" : "s") from a previous run."
+            )
+        }
+
         do {
             let exportResult = try await makeExportRecords(
                 mode: mode,
@@ -556,12 +568,16 @@ final class AppModel: ObservableObject {
         }.value
     }
 
-    private func forEachResourceBatch(_ body: ([AssetResourceDescriptor]) async throws -> Void) async rethrows {
+    private func forEachResourceBatch(_ body: ([AssetResourceDescriptor]) async throws -> Void) async throws {
         var startIndex = resources.startIndex
 
         while startIndex < resources.endIndex {
+            try Task.checkCancellation()
             let endIndex = resources.index(startIndex, offsetBy: Self.exportBatchSize, limitedBy: resources.endIndex) ?? resources.endIndex
             try await body(Array(resources[startIndex..<endIndex]))
+            // Release the per-batch PHAssetResource cache so memory stays bounded
+            // when exporting tens of thousands of resources.
+            (resourceWriter as? PhotoKitResourceWriter)?.resetBatchCache()
             startIndex = endIndex
         }
     }

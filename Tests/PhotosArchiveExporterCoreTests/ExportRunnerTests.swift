@@ -294,6 +294,34 @@ final class ExportRunnerTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: plannedRecord.destinationPath))
         plannedRecords.append(plannedRecord)
     }
+
+    func testPurgeOrphanedTemporaryFilesRemovesLeftoverFiles() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let tmpDirectory = directory
+            .appendingPathComponent("_photos_archive_exporter", isDirectory: true)
+            .appendingPathComponent("tmp", isDirectory: true)
+        try FileManager.default.createDirectory(at: tmpDirectory, withIntermediateDirectories: true)
+        let orphanA = tmpDirectory.appendingPathComponent(UUID().uuidString)
+        let orphanB = tmpDirectory.appendingPathComponent(UUID().uuidString)
+        try Data("a".utf8).write(to: orphanA)
+        try Data("b".utf8).write(to: orphanB)
+
+        let runner = ExportRunner(resourceWriter: FakeResourceWriter(data: Data()))
+        let removed = runner.purgeOrphanedTemporaryFiles(at: directory)
+
+        XCTAssertEqual(removed, 2)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: orphanA.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: orphanB.path))
+        // tmp directory itself is preserved so future runs can write to it.
+        XCTAssertTrue(FileManager.default.fileExists(atPath: tmpDirectory.path))
+    }
+
+    func testPurgeOrphanedTemporaryFilesReturnsZeroWhenTmpMissing() {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let runner = ExportRunner(resourceWriter: FakeResourceWriter(data: Data()))
+
+        XCTAssertEqual(runner.purgeOrphanedTemporaryFiles(at: directory), 0)
+    }
 }
 
 private struct FakeResourceWriter: ResourceWriting {
