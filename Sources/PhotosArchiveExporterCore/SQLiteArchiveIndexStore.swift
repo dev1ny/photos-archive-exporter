@@ -408,4 +408,9 @@ public struct SQLiteArchiveIndexStore {
     }
 }
 
+// `SQLITE_TRANSIENT` is a C macro defined as `((sqlite3_destructor_type)-1)`,
+// which the Swift importer cannot translate. The function-pointer sentinel
+// `-1` is the canonical Swift workaround (documented in the SQLite header
+// and used identically across Apple sample code). `unsafeBitCast` is the only
+// way to coerce an integer into a `@convention(c)` function pointer.
 private let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)

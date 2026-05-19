@@ -268,13 +268,30 @@ public struct ArchiveIndexStore {
         }.joined(separator: ",")
     }
 
+    /// CSV injection mitigation per OWASP guidance.
+    ///
+    /// If a cell starts with one of the formula-trigger characters
+    /// (`= + - @ \t \r`), or with leading whitespace that some spreadsheet apps
+    /// strip before evaluating the cell (Excel in particular), prefix the value
+    /// with a single quote so spreadsheet apps treat it as literal text rather
+    /// than executing it as a formula.
     private func neutralizeSpreadsheetFormula(_ value: String) -> String {
-        guard let first = value.first,
-              first == "=" || first == "+" || first == "-" || first == "@" || first == "\t" || first == "\r"
-        else {
-            return value
+        guard let first = value.first else { return value }
+
+        let dangerousLeaders: Set<Character> = ["=", "+", "-", "@", "\t", "\r"]
+        if dangerousLeaders.contains(first) {
+            return "'\(value)"
         }
 
-        return "'\(value)"
+        // Some spreadsheet apps trim leading whitespace before evaluating the
+        // cell. If the *first non-whitespace* character is a formula trigger,
+        // still neutralize so the value renders as plain text.
+        if first.isWhitespace,
+           let firstNonWhitespace = value.first(where: { !$0.isWhitespace }),
+           dangerousLeaders.contains(firstNonWhitespace) {
+            return "'\(value)"
+        }
+
+        return value
     }
 }
