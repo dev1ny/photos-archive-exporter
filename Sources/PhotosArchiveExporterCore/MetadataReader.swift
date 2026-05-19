@@ -13,6 +13,12 @@ public struct ResourceMetadataDates: Equatable {
 }
 
 public enum MetadataReader {
+    /// EXIF DateTimeOriginal does not encode a time zone. We anchor it to UTC so
+    /// the resulting `Date` is deterministic regardless of the machine running
+    /// the export. Downstream code (PathPlanner) should format using the same
+    /// zone to avoid drift between metadata and folder names.
+    public static let exifAssumedTimeZone = TimeZone(identifier: "UTC") ?? .gmt
+
     public static func readCaptureDates(from url: URL) -> ResourceMetadataDates {
         ResourceMetadataDates(
             exifOriginal: readExifOriginalDate(from: url),
@@ -42,12 +48,19 @@ public enum MetadataReader {
                 return date
             }
 
-            if item.identifier?.rawValue.lowercased().contains("creationdate") == true, let date = item.dateValue {
+            let isCreationDateIdentifier = item.identifier?.rawValue.lowercased().contains("creationdate") == true
+            guard isCreationDateIdentifier else { continue }
+
+            if let date = item.dateValue {
                 return date
             }
 
-            if item.identifier?.rawValue.lowercased().contains("creationdate") == true, let string = item.stringValue {
-                return ISO8601DateFormatter().date(from: string)
+            // Some containers expose creationDate only as a string (e.g. ISO 8601
+            // or "yyyy-MM-dd HH:mm:ss"). The previous implementation gated the
+            // string fallback on the same `dateValue` check above, making it
+            // unreachable. We try a couple of common formats here.
+            if let string = item.stringValue, let parsed = parseQuickTimeStringDate(string) {
+                return parsed
             }
         }
 
@@ -57,8 +70,34 @@ public enum MetadataReader {
     private static func parseExifDate(_ value: String) -> Date? {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = .current
+        formatter.timeZone = exifAssumedTimeZone
         formatter.dateFormat = "yyyy:MM:dd HH:mm:ss"
         return formatter.date(from: value)
+    }
+
+    private static func parseQuickTimeStringDate(_ value: String) -> Date? {
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime]
+        if let date = isoFormatter.date(from: value) {
+            return date
+        }
+        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = isoFormatter.date(from: value) {
+            return date
+        }
+
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = exifAssumedTimeZone
+        for pattern in ["yyyy-MM-dd'T'HH:mm:ssZZZZZ",
+                        "yyyy-MM-dd HH:mm:ss ZZZZZ",
+                        "yyyy-MM-dd HH:mm:ss",
+                        "yyyy:MM:dd HH:mm:ss"] {
+            formatter.dateFormat = pattern
+            if let date = formatter.date(from: value) {
+                return date
+            }
+        }
+        return nil
     }
 }

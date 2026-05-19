@@ -4,6 +4,13 @@ public struct PathPlanner {
     private let calendar: Calendar
     private let timeZone: TimeZone
 
+    /// Default initializer uses the device's current time zone so folder names
+    /// match what the user sees in Photos.app on the same machine.
+    ///
+    /// Note: EXIF DateTimeOriginal has no zone of its own and `MetadataReader`
+    /// anchors it to UTC. If you want EXIF-derived `captureDate`s to land in
+    /// folders that match their wall-clock string, pass
+    /// `timeZone: MetadataReader.exifAssumedTimeZone`.
     public init(calendar: Calendar = Calendar(identifier: .gregorian), timeZone: TimeZone = .current) {
         var configured = calendar
         configured.timeZone = timeZone
